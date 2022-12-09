@@ -42,6 +42,7 @@ library
       P7a
       P7b
       P8
+      P9
   other-modules:
       Paths_advent2022
   hs-source-dirs:
