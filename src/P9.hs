@@ -46,8 +46,15 @@ tailPositions :: [Coord] -> [Coord]
 tailPositions = scanl followHead (0,0)
 
 followHead :: Coord -> Coord -> Coord
-followHead (tailX, tailY) (headX, headY)
-  | abs (tailX - headX) > 1 && abs (tailY - headY) > 1 = ((tailX + headX) `div` 2, (tailY + headY) `div` 2)
-  | abs (tailX - headX) > 1 = ((tailX + headX) `div` 2, headY)
-  | abs (tailY - headY) > 1 = (headX, (tailY + headY) `div` 2)
-  | otherwise = (tailX, tailY)
+followHead tailCoord headCoord
+  | not xLagging && not yLagging = tailCoord
+  | otherwise = (pullTail xLagging fst tailCoord headCoord, pullTail yLagging snd tailCoord headCoord)
+  where xLagging = isLagging fst tailCoord headCoord
+        yLagging = isLagging snd tailCoord headCoord
+
+isLagging :: (Coord -> Int) -> Coord -> Coord -> Bool
+isLagging dimension tailCoord headCoord = abs (dimension tailCoord - dimension headCoord) > 1
+
+pullTail :: Bool -> (Coord -> Int) -> Coord -> Coord -> Int
+pullTail False dimension _ headCoord = dimension headCoord
+pullTail True dimension tailCoord headCoord = (dimension tailCoord + dimension headCoord) `div` 2
