@@ -43,5 +43,4 @@ solve2 :: [Instruction] -> String
 solve2 = concatMap ((++ ['\n']) . zipWith renderScreen [0..]) . chunksOf 40 . xValues
 
 renderScreen :: Int -> Int -> Char
-renderScreen crtLoc spriteLoc =
-    if abs (crtLoc - spriteLoc) > 1 then '.' else '#'
+renderScreen crtLoc spriteLoc = if abs (crtLoc - spriteLoc) > 1 then '.' else '#'

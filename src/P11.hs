@@ -4,7 +4,7 @@ import Data.List.Split (chunksOf)
 import qualified Data.Map as M
 import Data.List (sort)
 
-data Monkey = Monkey { monkeyItems :: [Integer], monkeyOperation :: Integer -> Integer, monkeyTest :: Integer, monkeyNextFalse :: Int, monkeyNextTrue :: Int, monkeyInspections :: Int }
+data Monkey = Monkey { monkeyItems :: [Integer], monkeyOperation :: Integer -> Integer, monkeyTestFactor :: Integer, nextMonkey :: Bool -> Int, monkeyInspections :: Int }
 type State = M.Map Int Monkey
 
 run1 :: String -> Int
@@ -18,11 +18,15 @@ parse = M.fromList . zip [0..] . map parseMonkey . chunksOf 7 . lines
 
 parseMonkey :: [String] -> Monkey
 parseMonkey (_:itemsStr:operationStr:testStr:nextTrueStr:nextFalseStr:_) =
-     Monkey (parseItems itemsStr) (parseOperation operationStr) (parseTest testStr) (parseNext nextFalseStr) (parseNext nextTrueStr) 0
+     Monkey (parseItems itemsStr) (parseOperation operationStr) (parseTest testStr) (parseNext nextFalseStr nextTrueStr) 0
 parseMonkey e = error ("Can't parse monkey chunk: " ++ unlines e)
 
-parseNext :: String -> Int
-parseNext = read . last . words
+parseNext :: String -> String -> Bool -> Int
+parseNext _ trueStr True = parseNext' trueStr
+parseNext falseStr _ False = parseNext' falseStr
+
+parseNext' :: String -> Int
+parseNext' = read . last . words
 
 parseTest :: String -> Integer
 parseTest = read . last . words
@@ -44,8 +48,7 @@ solve1 :: State -> Int
 solve1 = monkeyBusiness . doRounds manageWorry1 20
 
 solve2 :: State -> Int
-solve2 state = monkeyBusiness $ doRounds (manageWorry2 commonWorryFactor) 10000 state
-    where commonWorryFactor = product $ map monkeyTest $ M.elems state
+solve2 state = monkeyBusiness $ doRounds (manageWorry2 state) 10000 state
 
 doRounds :: (Integer -> Integer) -> Int -> State -> State
 doRounds manageWorry i = (!! i) . iterate (doRound manageWorry)
@@ -56,28 +59,30 @@ doRound manageWorry state = foldl (monkeyTurn manageWorry) state [0..7]
 monkeyTurn :: (Integer -> Integer) -> State -> Int -> State
 monkeyTurn manageWorry state i =
     let monkey = state M.! i
-        state' = foldl (processItem manageWorry monkey) state (reverse (monkeyItems monkey))
+        state' = inspectItems manageWorry state monkey
     in  endMonkeyTurn state' i
 
-processItem :: (Integer -> Integer) -> Monkey -> State -> Integer -> State
-processItem manageWorry monkey state worryLevel =
+inspectItems :: (Integer -> Integer) -> State -> Monkey -> State
+inspectItems manageWorry state monkey = foldl (inspectItem manageWorry monkey) state (reverse (monkeyItems monkey))
+
+inspectItem :: (Integer -> Integer) -> Monkey -> State -> Integer -> State
+inspectItem manageWorry monkey state worryLevel =
     let worryLevel' = manageWorry $ monkeyOperation monkey worryLevel
-        receivingMonkey = if testItem monkey worryLevel' then monkeyNextTrue monkey else monkeyNextFalse monkey
+        receivingMonkey = nextMonkey monkey (testItem monkey worryLevel')
     in  updateReceivingMonkey state receivingMonkey worryLevel'
 
-testItem :: Monkey -> Integer -> Bool 
-testItem monkey worryLevel = worryLevel `mod` monkeyTest monkey == 0
+testItem :: Monkey -> Integer -> Bool
+testItem monkey worryLevel = worryLevel `mod` monkeyTestFactor monkey == 0
 
 updateReceivingMonkey :: State -> Int -> Integer -> State
-updateReceivingMonkey state monkeyIndex item =
-    M.adjust (addItem item) monkeyIndex state
+updateReceivingMonkey state monkeyIndex item = M.adjust (addItem item) monkeyIndex state
 
 addItem :: Integer -> Monkey ->  Monkey
-addItem item (Monkey items op test nextFalse nextTrue inspections) = Monkey (item : items) op test nextFalse nextTrue inspections
+addItem item (Monkey items op test next inspections) = Monkey (item : items) op test next inspections
 
 endMonkeyTurn :: State -> Int -> State
-endMonkeyTurn state i = M.adjust endMonkeyTurn' i state
-    where endMonkeyTurn' monkey = Monkey [] (monkeyOperation monkey) (monkeyTest monkey) (monkeyNextFalse monkey) (monkeyNextTrue monkey) (inspections monkey)
+endMonkeyTurn state i = M.adjust monkey' i state
+    where monkey' monkey = Monkey [] (monkeyOperation monkey) (monkeyTestFactor monkey) (nextMonkey monkey) (inspections monkey)
           inspections monkey = monkeyInspections monkey + length (monkeyItems monkey)
 
 monkeyBusiness :: State -> Int
@@ -86,5 +91,8 @@ monkeyBusiness = product . take 2 . reverse . sort . map monkeyInspections . M.e
 manageWorry1 :: Integer -> Integer
 manageWorry1 x = x `div` 3
 
-manageWorry2 :: Integer -> Integer -> Integer
-manageWorry2 commonWorryFactor x = x `mod` commonWorryFactor
+manageWorry2 :: State -> Integer -> Integer
+manageWorry2 state x = x `mod` commonWorryFactor state
+
+commonWorryFactor :: State -> Integer
+commonWorryFactor = product . map monkeyTestFactor . M.elems
