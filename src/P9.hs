@@ -1,4 +1,4 @@
-module P9 (run1, run2) where
+module P9 (run1, run2, inputLocation) where
 import Data.List (nub)
 
 data Direction = Up | Down | Left | Right
@@ -9,6 +9,9 @@ run1 = solve1 . parse
 
 run2 :: String -> Int
 run2 = solve2 . parse
+
+inputLocation :: String
+inputLocation = "inputs/input9"
 
 parse :: String -> [Direction]
 parse = concatMap parseLine . lines

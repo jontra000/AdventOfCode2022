@@ -1,4 +1,4 @@
-module P11 (run1, run2) where
+module P11 (run1, run2, inputLocation) where
 
 import Data.List.Split (chunksOf)
 import qualified Data.Map as M
@@ -12,6 +12,9 @@ run1 = solve1 . parse
 
 run2 :: String -> Int
 run2 = solve2 . parse
+
+inputLocation :: String
+inputLocation = "inputs/input11"
 
 parse :: String -> State
 parse = M.fromList . zip [0..] . map parseMonkey . chunksOf 7 . lines

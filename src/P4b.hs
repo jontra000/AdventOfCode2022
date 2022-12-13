@@ -1,12 +1,18 @@
-module P4b (run) where
+module P4b (run1, run2, inputLocation) where
 
 import Data.List (intersect)
 import Data.List.Split (splitOn)
 
 type ElfPair = ([Int], [Int])
 
-run :: String -> Int
-run = solve . parse
+run1 :: String -> Int
+run1 = solve . parse
+
+run2 :: String -> Int
+run2 _ = 0
+
+inputLocation :: String
+inputLocation = "inputs/input4"
 
 parse :: String -> [ElfPair]
 parse = map parseLine . lines

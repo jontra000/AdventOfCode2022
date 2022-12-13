@@ -1,4 +1,4 @@
-module P8 (run1, run2) where
+module P8 (run1, run2, inputLocation) where
 
 import qualified Data.Map as M
 import Data.Char (digitToInt)
@@ -13,6 +13,9 @@ run1 = solve1 . parse1
 
 run2 :: String -> Int
 run2 = solve2 . parse2
+
+inputLocation :: String
+inputLocation = "inputs/input8"
 
 parse1 :: String -> TreeGrid1
 parse1 = map (map digitToInt) . lines

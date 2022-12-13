@@ -1,13 +1,11 @@
 module Main (main) where
 
--- import Data.Time.Clock (getCurrentTime, utctDayTime)
 import P12
 
 main :: IO ()
 main = do
-    -- ts1 <-  getCurrentTime
-    input <- readFile "inputs/input12"
-    let result = run2 input
-    print result
-    -- ts2 <- getCurrentTime
-    -- print (utctDayTime ts2 - utctDayTime ts1)
+    input <- readFile inputLocation
+    let result1 = run1 input
+        result2 = run2 input
+    print result1
+    print result2

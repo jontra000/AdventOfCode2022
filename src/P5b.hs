@@ -1,4 +1,4 @@
-module P5b (run) where
+module P5b (run1, run2, inputLocation) where
 
 import Data.List.Split (splitOn)
 import Data.Char (isDigit)
@@ -9,8 +9,14 @@ type Instructions = [Instruction]
 data Instruction = Instruction { instructionSource :: Int, instructionDestination :: Int, instructionCount :: Int } deriving Show
 data Input = Input State Instructions deriving Show
 
-run :: String -> String
-run = solve . parse
+run1 :: String -> String
+run1 = solve . parse
+
+run2 :: String -> String
+run2 _ = ""
+
+inputLocation :: String
+inputLocation = "inputs/input5"
 
 parse :: String -> Input
 parse = parseInput . splitInput

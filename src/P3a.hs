@@ -1,10 +1,16 @@
-module P3a (run) where
+module P3a (run1, run2, inputLocation) where
 
 import Data.List (intersect)
 import Data.Char (ord)
 
-run :: String -> Int
-run = solve . parse
+run1 :: String -> Int
+run1 = solve . parse
+
+run2 :: String -> Int
+run2 _ = 0
+
+inputLocation :: String
+inputLocation = "inputs/input3"
 
 parse :: String -> [String]
 parse = lines

@@ -1,4 +1,4 @@
-module P7 (run1, run2) where
+module P7 (run1, run2, inputLocation) where
 
 data Directory = Directory { subDirs :: [Directory], dirSize :: Int } deriving Show
 
@@ -7,6 +7,9 @@ run1 = solve1 . parse
 
 run2 :: String -> Int
 run2 = solve2 . parse
+
+inputLocation :: String
+inputLocation = "inputs/input7"
 
 parse :: String -> Directory
 parse = returnToRoot . foldl parseLine [Directory [] 0] . lines

@@ -1,4 +1,4 @@
-module P12 (run1, run2) where
+module P12 (run1, run2, inputLocation) where
 
 import qualified Data.Map as M
 import qualified Data.Set as S
@@ -10,6 +10,9 @@ data Node = Node Int (Maybe Int)
 type State = M.Map Coord Node
 -- 'S' coord, 'E' coord, grid
 data Input = Input Coord Coord State
+
+inputLocation :: String
+inputLocation = "inputs/input12"
 
 run1 :: String -> Maybe Int
 run1 = solve1 . parse

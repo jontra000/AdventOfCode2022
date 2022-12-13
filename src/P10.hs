@@ -1,4 +1,4 @@
-module P10 (run1, run2) where
+module P10 (run1, run2, inputLocation) where
 import Data.List.Split (chunksOf)
 
 data Instruction = Noop | AddX Int
@@ -8,6 +8,9 @@ run1 = solve1 . parse
 
 run2 :: String -> String
 run2 = solve2 . parse
+
+inputLocation :: String
+inputLocation = "inputs/input10"
 
 parse :: String -> [Instruction]
 parse = map parseLine . lines

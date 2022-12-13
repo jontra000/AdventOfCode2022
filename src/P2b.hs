@@ -1,11 +1,17 @@
-module P2b (run) where
+module P2b (run1, run2, inputLocation) where
 
 data Shape = Rock | Paper | Scissors deriving Eq
 data Result = Lose | Draw | Win
 data Round = Round Shape Result
 
-run :: String -> Int
-run = solve . parse
+run1 :: String -> Int
+run1 = solve . parse
+
+run2 :: String -> Int
+run2 _ = 0
+
+inputLocation :: String
+inputLocation = "inputs/input2"
 
 parse :: String -> [Round]
 parse = map parseLine . lines
