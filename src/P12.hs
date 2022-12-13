@@ -5,9 +5,11 @@ import qualified Data.Set as S
 import Data.Char (ord)
 import Data.Foldable (minimumBy)
 import Data.Function (on)
+import Data.Maybe (mapMaybe)
 
 type Coord = (Int, Int)
-type Grid = M.Map Coord Int
+data Node = Node {height :: Int, tentativeDistance :: Maybe Int}
+type Grid = M.Map Coord Node
 data Input = Input {inputStart :: Coord, inputEnd :: Coord, inputGrid :: Grid}
 
 run1 :: String -> Maybe Int
@@ -29,7 +31,7 @@ input :: M.Map Coord Char -> Input
 input charGrid = Input (startCoord charGrid) (endCoord charGrid) (heightGrid charGrid)
 
 heightGrid :: M.Map Coord Char -> Grid
-heightGrid = M.map charToHeight
+heightGrid = M.map ((`Node` Nothing) . charToHeight)
 
 charToHeight :: Char -> Int
 charToHeight 'S' = 0
@@ -46,44 +48,54 @@ findChar :: Char -> M.Map Coord Char -> Coord
 findChar c = fst . head . M.toList . M.filter (==c)
 
 solve1 :: Input -> Maybe Int
-solve1 (Input start end grid) = solveDijkstra grid (M.singleton start 0) (start, 0) end
+-- we look in reverse to make part 2 easier
+solve1 (Input start end grid) = solveDijkstra grid (end, (25,0)) start
 
-solveDijkstra :: Grid -> Grid -> (Coord, Int) -> Coord -> Maybe Int
-solveDijkstra unvisitedNodes tentativeDistances (currentNode, currentDistance) targetNode
-    | currentNode == targetNode = Just (tentativeDistances M.! currentNode)
+solveDijkstra :: Grid -> (Coord, (Int, Int)) -> Coord -> Maybe Int
+solveDijkstra unvisitedNodes (currentNode, (currentHeight, currentDistance)) targetNode
+    | currentNode == targetNode = tentativeDistance (unvisitedNodes M.! currentNode)
     | otherwise =
-        let tentativeDistances' = updateNeighbours tentativeDistances (currentDistance+1) unvisitedNodes currentNode
-            unvisitedNodes' = M.delete currentNode unvisitedNodes
-            nextNode = smallestDistance tentativeDistances' unvisitedNodes' 
-        in  nextNode >>= (\x -> solveDijkstra unvisitedNodes' tentativeDistances' x targetNode)
+        let unvisitedNodes' = M.delete currentNode $ updateNeighbours currentHeight (currentDistance+1) unvisitedNodes currentNode
+            nextNode = smallestDistance unvisitedNodes'
+        in  nextNode >>= (\x -> solveDijkstra unvisitedNodes' x targetNode)
 
-smallestDistance :: Grid -> Grid -> Maybe (Coord, Int)
-smallestDistance tentativeDistances = safeMinimum . M.toList . M.intersection tentativeDistances
+solveDijkstraMulti :: Maybe Int -> Grid -> (Coord, (Int, Int)) -> S.Set Coord -> Maybe Int
+solveDijkstraMulti bestDistance unvisitedNodes (currentNode, (currentHeight, currentDistance)) targetNodes
+    | null targetNodes = bestDistance
+    | otherwise =
+        let unvisitedNodes' = updateNeighbours currentHeight (currentDistance+1) unvisitedNodes currentNode
+            unvisitedNodes'' = M.delete currentNode unvisitedNodes'
+            bestDistance' = if currentHeight == 0 && maybe True (>= currentDistance) bestDistance then Just currentDistance else bestDistance
+            targetNodes' = S.delete currentNode targetNodes
+        in  case smallestDistance unvisitedNodes''  of
+                Nothing -> bestDistance'
+                Just nextNode -> solveDijkstraMulti bestDistance' unvisitedNodes'' nextNode targetNodes'
+
+smallestDistance :: Grid -> Maybe (Coord, (Int, Int))
+smallestDistance = safeMinimum . mapMaybe nodesWithDistance . M.toList
     where safeMinimum [] = Nothing
-          safeMinimum xs = Just (minimumBy (compare `on` snd) xs)
+          safeMinimum xs = Just (minimumBy (compare `on` (snd .snd)) xs)
+          nodesWithDistance (_, Node _ Nothing) = Nothing
+          nodesWithDistance (c, Node h (Just d)) = Just (c, (h,d))
 
-updateNeighbours :: Grid -> Int -> Grid -> Coord -> Grid
-updateNeighbours tentativeDistances currentDistance grid = foldl (updateNeighbour currentDistance) tentativeDistances . reachableNeighbours grid
+updateNeighbours :: Int -> Int -> Grid -> Coord -> Grid
+updateNeighbours currentHeight currentDistance grid = foldl (updateNeighbour currentDistance) grid . reachableNeighbours currentHeight grid
 
-reachableNeighbours :: Grid -> Coord -> [Coord]
-reachableNeighbours grid coord = M.keys $ M.filter (< height + 2) $ M.restrictKeys grid $ adjacentCoords coord
-    where height = grid M.! coord
+reachableNeighbours :: Int -> Grid -> Coord -> [Coord]
+reachableNeighbours currentHeight grid = M.keys . M.filter ((> currentHeight - 2) . height) . M.restrictKeys grid . adjacentCoords
 
 adjacentCoords :: Coord -> S.Set Coord
 adjacentCoords (x,y) = S.fromList [(x+1, y), (x-1,y), (x,y+1), (x,y-1)]
 
 updateNeighbour :: Int -> Grid -> Coord -> Grid
-updateNeighbour currentDistance grid coord = M.alter (updateDistance currentDistance) coord grid
+updateNeighbour currentDistance grid coord = M.update (updateDistance currentDistance) coord grid
 
-updateDistance :: Int -> Maybe Int -> Maybe Int
-updateDistance x Nothing = Just x
-updateDistance x (Just y) = Just (min x y)
+updateDistance :: Int -> Node -> Maybe Node
+updateDistance newDistance (Node h oldDistance) = Just $ Node h (updateDistance' newDistance oldDistance)
+    where updateDistance' newValue = Just . maybe newValue (min newValue)
 
 solve2 :: Input -> Maybe Int
-solve2 = minimum . filter (/= Nothing) . map solve1 . hikeStarts
+solve2 (Input _ end grid) = solveDijkstraMulti Nothing grid (end, (25,0)) (lowestCoords grid)
 
-hikeStarts :: Input -> [Input]
-hikeStarts (Input _ end grid) = map (\start -> Input start end grid) $ lowestCoords grid
-
-lowestCoords :: Grid -> [Coord]
-lowestCoords = M.keys . M.filter (==0)
+lowestCoords :: Grid -> S.Set Coord
+lowestCoords = S.fromList . M.keys . M.filter ((==0) . height)
