@@ -1,7 +1,7 @@
 module P13 (run1, run2, inputLocation) where
 import Data.List.Split (chunksOf)
 import Data.Char (isNumber)
-import Data.List (sortBy, elemIndex)
+import Data.List (sortBy, elemIndex, findIndices)
 import Data.Maybe (mapMaybe)
 
 data PacketValue = PacketInt Int | PacketList [PacketValue] deriving Eq
@@ -21,7 +21,7 @@ parse = map parsePair . chunksOf 3 . lines
 
 parsePair :: [String] -> (PacketValue, PacketValue)
 parsePair (pair1:pair2:_) = (fst $ parsePacketValue pair1, fst $ parsePacketValue pair2)
-parsePair _ = error "Parsing wrong number of lines for pair" 
+parsePair _ = error "Parsing wrong number of lines for pair"
 
 parsePacketValue :: String -> (PacketValue, String)
 parsePacketValue ('[':xs) = parsePacketList xs
@@ -49,19 +49,25 @@ appendPacketList value (PacketList list) = PacketList (value : list)
 appendPacketList _ _ = error "Can't append to int"
 
 solve1 :: Input -> Int
-solve1 = sum . map fst . filter ((==LT) . uncurry orderPacket . snd) . zip [1..]
+solve1 = sum . map (+1) . findIndices isPairOrdered
 
-orderPacket :: PacketValue -> PacketValue -> Ordering
-orderPacket (PacketInt left) (PacketInt right) = compare left right
-orderPacket left@(PacketInt _) right = orderPacket (PacketList [left]) right
-orderPacket left right@(PacketInt _) = orderPacket left (PacketList [right])
-orderPacket (PacketList []) (PacketList []) = EQ
-orderPacket (PacketList []) _ = LT
-orderPacket _ (PacketList []) = GT
-orderPacket (PacketList (left:left')) (PacketList (right:right')) =
-    case orderPacket left right of
-        EQ -> orderPacket (PacketList left') (PacketList right')
-        x -> x
+isPairOrdered :: (PacketValue, PacketValue) -> Bool
+isPairOrdered = (==LT) . uncurry comparePacket
+
+comparePacket :: PacketValue -> PacketValue -> Ordering
+comparePacket (PacketInt left) (PacketInt right) = compare left right
+comparePacket left@(PacketInt _) (PacketList right) = comparePacketList [left] right
+comparePacket (PacketList left) right@(PacketInt _) = comparePacketList left [right]
+comparePacket (PacketList left) (PacketList right) = comparePacketList left right
+
+comparePacketList :: [PacketValue] -> [PacketValue] -> Ordering
+comparePacketList [] [] = EQ
+comparePacketList [] _ = LT
+comparePacketList _ [] = GT
+comparePacketList (left:left') (right:right')
+    | compareFirstElems == EQ = comparePacket (PacketList left') (PacketList right')
+    | otherwise = compareFirstElems
+    where compareFirstElems = comparePacket left right
 
 solve2 :: Input -> Int
 solve2 = decoderKey . concatMap unpair
@@ -69,8 +75,14 @@ solve2 = decoderKey . concatMap unpair
 unpair :: (a,a) -> [a]
 unpair (x,y) = [x,y]
 
+dividerPackets :: [PacketValue]
+dividerPackets = [PacketList [PacketList [PacketInt 2]], PacketList [PacketList [PacketInt 6]]]
+
 decoderKey :: [PacketValue] -> Int
-decoderKey packetList =
-    let dividerPackets = [PacketList [PacketList [PacketInt 2]], PacketList [PacketList [PacketInt 6]]]
-        sortedList = sortBy orderPacket (packetList ++ dividerPackets)
-    in  product $ map (+1) $ mapMaybe (`elemIndex` sortedList) dividerPackets
+decoderKey = product . dividerIndices . sortWithDividers
+
+sortWithDividers :: [PacketValue] -> [PacketValue]
+sortWithDividers = sortBy comparePacket . (dividerPackets ++)
+
+dividerIndices :: [PacketValue] -> [Int]
+dividerIndices xs = map (+1) $ mapMaybe (`elemIndex` xs) dividerPackets
