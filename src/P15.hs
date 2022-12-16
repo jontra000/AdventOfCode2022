@@ -5,11 +5,10 @@ import Data.Maybe (mapMaybe)
 import Data.Function (on)
 
 type Coord = (Int, Int)
--- sensors, beacons
-type SensorBeaconPair = (Coord, Coord)
-data SensorDistancePair = SensorDistancePair Coord Int deriving Show
+type Slice = (Int, Int)
+-- sensors, beacons, distance
+data SensorBeaconPair = SensorBeaconPair Coord Coord Int
 type State = [SensorBeaconPair]
-type State2 = [SensorDistancePair]
 
 inputLocation :: String
 inputLocation = "inputs/input15"
@@ -18,58 +17,63 @@ run1 :: String -> Int
 run1 = solve1 . parse
 
 run2 :: String -> Int
-run2 = solve2 . parse2
+run2 = solve2 . parse
 
 parse :: String -> State
 parse = map parseLine . lines
 
-parse2 :: String -> [SensorDistancePair]
-parse2 = map distancePair . parse
+distancePair :: Coord -> Coord -> SensorBeaconPair
+distancePair sensor beacon = SensorBeaconPair sensor beacon (manhattanDistance sensor beacon)
 
-distancePair :: SensorBeaconPair -> SensorDistancePair
-distancePair (sensor, beacon) = SensorDistancePair sensor (manhattanDistance sensor beacon)
-
-parseLine :: String -> (Coord, Coord)
+parseLine :: String -> SensorBeaconPair
 parseLine s =
     let ws = words s
-    in  (parseCoords (ws !! 2) (ws !! 3), parseCoords (ws !! 8) (ws !! 9))
+    in  distancePair (parseCoords (init (ws !! 2)) (init (ws !! 3))) (parseCoords (init (ws !! 8)) (ws !! 9))
 
 parseCoords :: String -> String -> Coord
-parseCoords xs ys = (read (filter isNumber xs), read (filter isNumber ys))
+parseCoords xs ys = (parseNumber xs, parseNumber ys)
 
-isNumber :: Char -> Bool
-isNumber '0' = True
-isNumber '1' = True
-isNumber '2' = True
-isNumber '3' = True
-isNumber '4' = True
-isNumber '5' = True
-isNumber '6' = True
-isNumber '7' = True
-isNumber '8' = True
-isNumber '9' = True
-isNumber '-' = True
-isNumber _ = False
+parseNumber :: String -> Int
+parseNumber = read . drop 2
+
+targetRowPart1 :: Int
+targetRowPart1 = 2000000
 
 solve1 :: State -> Int
-solve1 state = stripBeacons 2000000 state $ coverageOnRow 2000000 state
+solve1 state = removeBeacons targetRowPart1 state $ coverageOnRow targetRowPart1 state
+
+orderedSlicesAtRow :: Int -> State -> [Slice]
+orderedSlicesAtRow row = sortBy (compare `on` fst) . mapMaybe (slice row)
 
 coverageOnRow :: Int -> State -> Int
-coverageOnRow row = coverageOnRow' . sortBy (compare `on` fst) . mapMaybe (slice row . distancePair)
-      where coverageOnRow' [] = 0
-            coverageOnRow' ((leftEdge,rightEdge):slices) = coverageOnRow'' leftEdge rightEdge slices
-            coverageOnRow'' left right [] = right - left + 1
-            coverageOnRow'' left right allSlices@((nextLeft, nextRight):slices) =
-                if nextLeft <= right+1 then
-                    coverageOnRow'' left (max right nextRight) slices
-                else
-                    right + 1 - left + coverageOnRow' allSlices
+coverageOnRow row = coverageOnSlices . orderedSlicesAtRow row
+
+coverageOnSlices :: (Num p, Ord p) => [(p, p)] -> p
+coverageOnSlices [] = 0
+coverageOnSlices ((leftEdge,rightEdge):slices) = coverageOnSlices' leftEdge rightEdge slices
+
+coverageOnSlices' :: (Num a, Ord a) => a -> a -> [(a, a)] -> a
+coverageOnSlices' left right [] = right - left + 1
+coverageOnSlices' left right ((nextLeft, nextRight):slices) =
+    if nextLeft <= right + 1 then
+        coverageOnSlices' left (max right nextRight) slices
+    else
+        right + 1 - left + coverageOnSlices' nextLeft nextRight slices
 
 beaconsOn :: Int -> State -> Int
-beaconsOn row = length . nub . filter ((==row) . snd) . map snd
+beaconsOn row = countUnique . filter (isOnRow row) . map getBeacon
 
-stripBeacons :: Int -> State -> Int -> Int
-stripBeacons row state x = x - beaconsOn row state
+isOnRow :: Int -> Coord -> Bool
+isOnRow row = (==row) . snd
+
+countUnique :: Eq a => [a] -> Int
+countUnique = length . nub
+
+getBeacon :: SensorBeaconPair -> Coord
+getBeacon (SensorBeaconPair _ x _) = x
+
+removeBeacons :: Int -> State -> Int -> Int
+removeBeacons row state x = x - beaconsOn row state
 
 pair :: Int -> Int -> Coord
 pair x y = (x,y)
@@ -77,32 +81,35 @@ pair x y = (x,y)
 manhattanDistance :: Coord -> Coord -> Int
 manhattanDistance (x1,y1) (x2,y2) = abs (x1 - x2) + abs (y1 - y2)
 
-solve2 :: State2 -> Int
+solve2 :: State -> Int
 solve2 = tuningFrequency . findSensor
 
-findSensor :: State2 -> Coord
-findSensor state = head $ mapMaybe (checkRow state) [0..4000000]
+maxCoordValue :: Int
+maxCoordValue = 4000000
+
+findSensor :: State -> Coord
+findSensor state = head $ mapMaybe (`coverageGap` state) [0..maxCoordValue]
 
 tuningFrequency :: Coord -> Int
 tuningFrequency (x, y) = x*4000000 + y
 
-checkRow :: State2 -> Int -> Maybe Coord
-checkRow state y =
-    let slices = sortBy (compare `on` fst) $ mapMaybe (slice y) state
-    in  (`pair` y) <$> checkSlices 0 slices
+coverageGap :: Int -> State -> Maybe Coord
+coverageGap y = fmap (`pair` y) . coverageGapSlices 0 . orderedSlicesAtRow y
 
-checkSlices :: Int -> [(Int, Int)] -> Maybe Int
-checkSlices rightEdge slices
-    | rightEdge > 4000000 = Nothing
-    | otherwise = case slices of
-        [] -> Just rightEdge
-        ((nextLeft, nextRight):xs) -> if nextLeft <= rightEdge
-            then checkSlices (max rightEdge (nextRight + 1)) xs
-            else Just rightEdge
+coverageGapSlices :: Int -> [Slice] -> Maybe Int
+coverageGapSlices rightEdge slices
+    | rightEdge > maxCoordValue = Nothing
+    | otherwise = coverageGapSlices' rightEdge slices
 
-slice :: Int -> SensorDistancePair -> Maybe (Int, Int)
-slice row (SensorDistancePair (x,y) distance) =
-    if xDistance < 0
-    then Nothing
-    else Just (x - xDistance, x + xDistance)
-    where xDistance = distance - abs (y - row)
+coverageGapSlices' :: Int -> [Slice] -> Maybe Int
+coverageGapSlices' rightEdge [] = Just rightEdge
+coverageGapSlices' rightEdge ((nextLeft, nextRight):xs)
+    | nextLeft > rightEdge = Just rightEdge
+    | otherwise = coverageGapSlices rightEdge' xs
+        where rightEdge' = max rightEdge (nextRight + 1)
+
+slice :: Int -> SensorBeaconPair -> Maybe (Int, Int)
+slice row (SensorBeaconPair (x,y) _ distance)
+    | xDistance < 0 = Nothing
+    | otherwise = Just (x - xDistance, x + xDistance)
+        where xDistance = distance - abs (y - row)
