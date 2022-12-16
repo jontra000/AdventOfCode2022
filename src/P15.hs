@@ -1,7 +1,6 @@
 module P15 (run1, run2, inputLocation) where
 
-import qualified Data.Set as S
-import Data.List (sortBy)
+import Data.List (sortBy, nub)
 import Data.Maybe (mapMaybe)
 import Data.Function (on)
 
@@ -53,18 +52,24 @@ isNumber '-' = True
 isNumber _ = False
 
 solve1 :: State -> Int
-solve1 state = length $ stripBeacons (beaconsOn 2000000 state) $ S.unions $ map (onRow 2000000) state
+solve1 state = stripBeacons 2000000 state $ coverageOnRow 2000000 state
 
-onRow :: Int -> (Coord, Coord) -> S.Set Int
-onRow row (sensor@(x,y), beacon) =
-    let distance = manhattanDistance sensor beacon
-    in  S.fromList [x - distance + abs(y - row) .. x + distance - abs (y - row)]
+coverageOnRow :: Int -> State -> Int
+coverageOnRow row = coverageOnRow' . sortBy (compare `on` fst) . mapMaybe (slice row . distancePair)
+      where coverageOnRow' [] = 0
+            coverageOnRow' ((leftEdge,rightEdge):slices) = coverageOnRow'' leftEdge rightEdge slices
+            coverageOnRow'' left right [] = right - left + 1
+            coverageOnRow'' left right allSlices@((nextLeft, nextRight):slices) =
+                if nextLeft <= right+1 then
+                    coverageOnRow'' left (max right nextRight) slices
+                else
+                    right + 1 - left + coverageOnRow' allSlices
 
-beaconsOn :: Int -> State -> S.Set Int
-beaconsOn row = S.fromList . map fst . filter ((==row) . snd) . map snd
+beaconsOn :: Int -> State -> Int
+beaconsOn row = length . nub . filter ((==row) . snd) . map snd
 
-stripBeacons :: S.Set Int -> S.Set Int -> S.Set Int
-stripBeacons beaconLocations result = S.difference result beaconLocations
+stripBeacons :: Int -> State -> Int -> Int
+stripBeacons row state x = x - beaconsOn row state
 
 pair :: Int -> Int -> Coord
 pair x y = (x,y)
