@@ -1,19 +1,17 @@
 module P16 (run1, run2, inputLocation) where
 
 import qualified Data.Map as M
-import qualified Data.Set as S
-import Data.Function (on)
-import Data.List (minimumBy, delete, permutations, nub)
+import Data.List (delete, (\\))
 import Data.Maybe (mapMaybe)
 
 -- pressure, neighbours
 data Valve = Valve Int [String]
 type Input = M.Map String Valve
 
--- pressure, distance to nodes
-data Node = Node Int (M.Map String Int) deriving Show
-type Network = M.Map String (M.Map String Int)
-data State = State Network [(String, Int)] deriving Show
+-- name, pressure, distance to nodes
+type DistanceMap = M.Map String Int
+data Node = Node Int DistanceMap deriving (Eq, Ord, Show)
+type Network = M.Map String Node
 
 type UnvisitedNodes = M.Map String (Maybe Int)
 
@@ -49,12 +47,12 @@ solve1 = findMaxPressure 30 . nodePaths
 solve2 :: Input -> Int
 solve2 = findMaxPressure2 26 . nodePaths
 
-nodePaths :: Input -> State
+nodePaths :: Input -> (DistanceMap, [(String, Node)])
 nodePaths input =
     let valves = M.filter (> 0) $ M.map (\(Valve pressure _) -> pressure) input
-        startingLocations = "AA" : M.keys valves
-        network = M.fromSet (node input (M.keys valves)) $ S.fromList startingLocations
-    in  State network (M.toList valves)
+        network = M.elems $ M.mapWithKey (node input (M.keys valves)) valves
+        initDistances = distances input (M.keys valves) "AA"
+    in  (initDistances, network)
 
 distances :: Input -> [String] -> String -> M.Map String Int
 distances input destinations start = M.fromList $ zip destinations $ mapMaybe (distance input start) destinations
@@ -103,50 +101,53 @@ updateDistance :: Int -> Maybe Int -> Maybe Int
 updateDistance d Nothing = Just d
 updateDistance dNew (Just dOld) = Just (min dNew dOld)
 
-node :: Input -> [String] -> String -> M.Map String Int
-node input destinations start = distances input (delete start destinations) start
+node :: Input -> [String] -> String -> Int -> (String, Node)
+node input destinations start pressure = (start, Node pressure $ distances input (delete start destinations) start)
 
-findMaxPressure :: Int -> State -> Int
-findMaxPressure timeLimit (State network valves) = maximum $ map findMaxPressure' valves
-    where findMaxPressure' nextNode = totalPressure network "AA" timeLimit nextNode (delete nextNode valves)
+findMaxPressure :: Int -> (DistanceMap, [(String, Node)]) -> Int
+findMaxPressure _ (_, []) = 0
+findMaxPressure timeLimit (initDistances, nodes) = totalPressure initDistances timeLimit (M.fromList nodes)
 
-findMaxPressure2 :: Int -> State -> Int
-findMaxPressure2 timeLimit state@(State _ valves) = maximum $ map (maxPressureForPermutation timeLimit state) $ permute valves
+findMaxPressure2 :: Int -> (DistanceMap, [(String, Node)]) -> Int
+findMaxPressure2 timeLimit (initDistances, network) = maximum $ map (maxPressureForPermutation timeLimit initDistances) $ permute network
 
-maxPressureForPermutation :: Int -> State -> ([(String, Int)],[(String, Int)]) -> Int
-maxPressureForPermutation timeLimit (State network _) (valves1, valves2) =
-    findMaxPressure timeLimit (State network valves1) + findMaxPressure timeLimit (State network valves2)
+maxPressureForPermutation :: Int -> DistanceMap -> ([(String, Node)], [(String, Node)]) -> Int
+maxPressureForPermutation timeLimit initDistances (valves1, valves2) =
+    totalPressure initDistances timeLimit (M.fromList valves1) + totalPressure initDistances timeLimit (M.fromList valves2)
 
-permute :: [a] -> [([a], [a])]
-permute xs = map listToPair $ filter ((==2) . length) $ partitions xs
+permute :: Ord a => [a] -> [([a], [a])]
+permute xs = removeDuplicateComplements $ map (pairWithComplement xs) $ partitions xs
 
-partitions :: [a] -> [[[a]]]
-partitions [] = [[]]
-partitions (x:xs) = expand x $ partitions xs where
+partitions :: [a] -> [[a]]
+partitions [] = []
+partitions [x] = [[x],[]]
+partitions (x:xs) =
+    let xs' = partitions xs
+    in  xs' ++ map (x :) xs'
 
-    expand :: a -> [[[a]]] -> [[[a]]]
-    expand x ys = concatMap (extend x) ys
+pairWithComplement :: Eq a => [a] -> [a] -> ([a],[a])
+pairWithComplement xs xs' = (xs', xs \\ xs')
 
-    extend :: a -> [[a]] -> [[[a]]]
-    extend x [] = [[[x]]]
-    extend x (y:ys) = ((x:y):ys) : map (y:) (extend x ys)
+removeDuplicateComplements :: Ord a => [([a], [a])] -> [([a], [a])]
+removeDuplicateComplements = M.toList . foldl addComplementPair M.empty
 
-listToPair :: [a] -> (a,a)
-listToPair (x:y:_) = (x,y)
-listToPair _ = error "not enough elements to make pair"
+addComplementPair :: Ord a => M.Map a a -> (a,a) -> M.Map a a
+addComplementPair acc (x,y)
+    | M.member y acc = acc
+    | otherwise = M.insert x y acc
 
-totalPressure :: Network -> String -> Int -> (String, Int) -> [(String, Int)] -> Int
-totalPressure network currentNode remainingTime (nextNode, valvePressure) remainingNodes =
-    case M.lookup currentNode network of
-        Nothing -> error ("Can't lookup node " ++ currentNode)
-        Just valveDistances -> if remainingTime' < 0
-                then 0
-                else pressure + safeMaximum (map totalPressure' remainingNodes)
-            where remainingTime' = remainingTime - 1 - valveDistances M.! nextNode
-                  pressure = remainingTime' * valvePressure
-                  totalPressure' nextNode' =
-                    totalPressure network nextNode remainingTime' nextNode' (delete nextNode' remainingNodes)
+totalPressure :: M.Map String Int -> Int -> Network -> Int
+totalPressure nodeDistances remainingTime remainingNodes = safeMaximum (M.mapWithKey totalPressure' remainingNodes)
+    where   totalPressure' nextNodeName (Node nextNodePressure nextNodeDistances) = 
+                let remainingTime' = remainingTime - 1 - (nodeDistances M.! nextNodeName)
+                in  if remainingTime' <= 0
+                    then 0
+                    else
+                        let pressure = remainingTime' * nextNodePressure
+                            remainingNodes' = M.delete nextNodeName remainingNodes
+                        in  pressure + totalPressure nextNodeDistances remainingTime' remainingNodes'
 
-safeMaximum :: [Int] -> Int
-safeMaximum [] = 0
-safeMaximum xs = maximum xs
+safeMaximum :: M.Map k Int -> Int
+safeMaximum = safe' . M.elems
+    where safe' [] = 0
+          safe' xs = maximum xs
