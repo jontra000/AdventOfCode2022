@@ -2,13 +2,12 @@ module P16 (run1, run2, inputLocation) where
 
 import qualified Data.Set as S
 import qualified Data.Map as M
-import Data.List (delete, (\\))
+import Data.List (delete)
 
 -- pressure, neighbours
 data Valve = Valve Int [String]
 type ValveMap = M.Map String Valve
 
--- name, pressure, distance to nodes
 type DistanceMap = M.Map String Int
 data Node = Node Int DistanceMap deriving (Eq, Ord, Show)
 data Input = Input DistanceMap [(String, Node)]
@@ -119,51 +118,51 @@ node input destinations (start, pressure) = (start, Node pressure $ distances in
 
 findMaxPressure :: Int -> Input -> Int
 findMaxPressure _ (Input _ []) = 0
-findMaxPressure timeLimit (Input distanceMap nodes) = highestPossiblePressure distanceMap timeLimit (M.fromList nodes)
+findMaxPressure timeLimit (Input distanceMap nodes) = runOutputs1 timeLimit distanceMap $ M.fromList nodes
 
 findMaxPressure2 :: Int -> Input -> Int
-findMaxPressure2 timeLimit (Input distanceMap network) = maximum $ map (maxPressureForPermutation timeLimit distanceMap) $ permute network
+findMaxPressure2 timeLimit (Input distanceMap network) =
+    let humanResults = maximumPressures $ runOutputs2 timeLimit distanceMap $ M.fromList network
+        bestSingleRun = maximum (map snd humanResults)
+    in  foldl (runElephants timeLimit distanceMap network bestSingleRun) 0 humanResults
 
-maxPressureForPermutation :: Int -> DistanceMap -> ([(String, Node)], [(String, Node)]) -> Int
-maxPressureForPermutation timeLimit distanceMap (valves1, valves2) =
-    highestPossiblePressure distanceMap timeLimit (M.fromList valves1) + highestPossiblePressure distanceMap timeLimit (M.fromList valves2)
+runElephants :: Int -> DistanceMap -> [(String, Node)] -> Int -> Int -> ([String], Int) -> Int
+runElephants timeLimit distanceMap network bestSingleRun bestDoubleRun (availableNodes, runResult)
+    | runResult + bestSingleRun > bestDoubleRun =
+        let nextResult = elephantResults timeLimit distanceMap (filterNetwork (M.fromList network) availableNodes) runResult
+        in  max nextResult bestDoubleRun
+    | otherwise = bestDoubleRun
 
-permute :: Ord a => [a] -> [([a], [a])]
-permute xs = removeDuplicateComplements $ map (pairWithComplement xs) $ partitions xs
+filterNetwork :: Network -> [String] -> Network
+filterNetwork network = M.restrictKeys network . S.fromList
 
-partitions :: [a] -> [[a]]
-partitions [] = []
-partitions [x] = [[x],[]]
-partitions (x:xs) =
-    let xs' = partitions xs
-    in  xs' ++ map (x :) xs'
+elephantResults :: Int -> DistanceMap -> Network -> Int -> Int
+elephantResults timeLimit distanceMap unvisitedNodes humansPressure = humansPressure + runOutputs1 timeLimit distanceMap unvisitedNodes
 
-pairWithComplement :: Eq a => [a] -> [a] -> ([a],[a])
-pairWithComplement xs xs' = (xs', xs \\ xs')
+runOutputs1 :: Int -> DistanceMap -> Network -> Int
+runOutputs1 remainingTime distanceMap network = maximum $ map (uncurry $ moveToNode1 distanceMap remainingTime network) $ M.toList network
 
-removeDuplicateComplements :: Ord a => [([a], [a])] -> [([a], [a])]
-removeDuplicateComplements = M.toList . foldl addComplementPair M.empty
+runOutputs2 :: Int -> DistanceMap -> Network -> [M.Map [String] Int]
+runOutputs2 remainingTime distanceMap network = concatMap (uncurry $ moveToNode2 distanceMap remainingTime network) $ M.toList network
 
-addComplementPair :: Ord a => M.Map a a -> (a,a) -> M.Map a a
-addComplementPair acc (x,y)
-    | M.member y acc = acc
-    | otherwise = M.insert x y acc
+maximumPressures :: [M.Map [String] Int] -> [([String], Int)]
+maximumPressures = M.toList . M.unionsWith max
 
-highestPossiblePressure :: M.Map String Int -> Int -> Network -> Int
-highestPossiblePressure nodeDistances remainingTime remainingNodes = safeMaximum (M.mapWithKey (moveToNode nodeDistances remainingTime remainingNodes) remainingNodes)
+moveToNode2 :: M.Map String Int -> Int -> Network -> String -> Node -> [M.Map [String] Int]
+moveToNode2 nodeDistances remainingTime remainingNodes nextNodeName (Node nextNodePressure nextNodeDistances)
+    | remainingTime' <= 0 = [M.singleton (M.keys remainingNodes) 0]
+    | otherwise = map (M.map (+ pressure)) $ runOutputs2 remainingTime' nextNodeDistances remainingNodes'
+        where   remainingTime' = decreaseRemainingTime remainingTime nodeDistances nextNodeName
+                pressure = remainingTime' * nextNodePressure
+                remainingNodes' = M.delete nextNodeName remainingNodes
 
-moveToNode :: M.Map String Int -> Int -> Network -> String -> Node -> Int
-moveToNode nodeDistances remainingTime remainingNodes nextNodeName (Node nextNodePressure nextNodeDistances)
+moveToNode1 :: M.Map String Int -> Int -> Network -> String -> Node -> Int
+moveToNode1 nodeDistances remainingTime remainingNodes nextNodeName (Node nextNodePressure nextNodeDistances)
     | remainingTime' <= 0 = 0
-    | otherwise = pressure + highestPossiblePressure nextNodeDistances remainingTime' remainingNodes'
+    | otherwise = pressure + runOutputs1 remainingTime' nextNodeDistances remainingNodes'
         where   remainingTime' = decreaseRemainingTime remainingTime nodeDistances nextNodeName
                 pressure = remainingTime' * nextNodePressure
                 remainingNodes' = M.delete nextNodeName remainingNodes
 
 decreaseRemainingTime :: Int -> M.Map String Int -> String -> Int
 decreaseRemainingTime remainingTime nodeDistances nextNodeName = remainingTime - 1 - (nodeDistances M.! nextNodeName)
-
-safeMaximum :: M.Map k Int -> Int
-safeMaximum = safe' . M.elems
-    where safe' [] = 0
-          safe' xs = maximum xs
