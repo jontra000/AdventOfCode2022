@@ -8,10 +8,12 @@ import Data.List (delete)
 data Valve = Valve Int [String]
 type ValveMap = M.Map String Valve
 
+type PressureMap = M.Map String Int
 type DistanceMap = M.Map String Int
 data Node = Node Int DistanceMap deriving (Eq, Ord, Show)
 data Input = Input DistanceMap [(String, Node)]
 type Network = M.Map String Node
+type NodeList = [(String, Node)]
 
 type UnvisitedNodes = M.Map String (Maybe Int)
 
@@ -49,19 +51,20 @@ solve2 = findMaxPressure2 26
 nodePaths :: ValveMap -> Input
 nodePaths input =
     let valves = nonZeroValvePressures input
-    in  Input (initDistances input valves) (mapNodes input valves)
+        valveNames = M.keys valves
+    in  Input (initDistances input valveNames) (mapNodes input valves)
 
-initDistances :: ValveMap -> M.Map String Int -> M.Map String Int
-initDistances input = distances input "AA" . M.keys
+initDistances :: ValveMap -> [String] -> DistanceMap
+initDistances input = distances input "AA"
 
-mapNodes :: ValveMap -> M.Map String Int -> [(String, Node)]
+mapNodes :: ValveMap -> PressureMap -> NodeList
 mapNodes input nonZeroValves = map (node input valveNames) $ M.toList nonZeroValves
     where valveNames = M.keys nonZeroValves
 
-nonZeroValvePressures :: ValveMap -> M.Map String Int
+nonZeroValvePressures :: ValveMap -> PressureMap
 nonZeroValvePressures = M.filter (> 0) . M.map (\(Valve pressure _) -> pressure)
 
-distances :: ValveMap -> String -> [String] -> M.Map String Int
+distances :: ValveMap -> String -> [String] -> DistanceMap
 distances input start = stripNothings . mapFromKeys (distance input start)
 
 mapFromKeys :: Ord a => (a -> b) -> [a] -> M.Map a b
@@ -79,12 +82,16 @@ initUnvisitedNodes = M.map (const Nothing)
 
 dijkstra :: ValveMap -> UnvisitedNodes -> Maybe (String, Int) -> String -> Maybe Int
 dijkstra _ _ Nothing _ = Nothing
-dijkstra input unvisitedNodes (Just (currentNode, currentDistance)) targetNode
+dijkstra valves unvisitedNodes (Just (currentNode, currentDistance)) targetNode
     | currentNode == targetNode = Just currentDistance
-    | otherwise =
-        let unvisitedNodes' = updateUnvisited input (currentDistance+1) currentNode unvisitedNodes
-            nextNode = smallestDistance unvisitedNodes'
-        in  dijkstra input unvisitedNodes' nextNode targetNode
+    | otherwise = 
+        let unvisitedNodes' = updateUnvisited valves (currentDistance+1) currentNode unvisitedNodes
+        in  dijkstraStep valves targetNode unvisitedNodes'
+
+dijkstraStep :: ValveMap -> String -> UnvisitedNodes -> Maybe Int
+dijkstraStep input targetNode unvisitedNodes =
+    let nextNode = smallestDistance unvisitedNodes
+    in  dijkstra input unvisitedNodes nextNode targetNode
 
 smallestDistance :: UnvisitedNodes -> Maybe (String, Int)
 smallestDistance = M.foldlWithKey minTentativeDistance Nothing
@@ -97,7 +104,7 @@ minTentativeDistance prev@(Just (_, prevDistance)) key (Just tentativeDistance)
     | otherwise = prev
 
 updateUnvisited :: ValveMap -> Int -> String -> UnvisitedNodes -> UnvisitedNodes
-updateUnvisited input nextDistance currentNode unvisitedNodes = M.delete currentNode $ updateNeighbours input nextDistance unvisitedNodes currentNode
+updateUnvisited valves nextDistance currentNode unvisitedNodes = M.delete currentNode $ updateNeighbours valves nextDistance unvisitedNodes currentNode
 
 updateNeighbours :: ValveMap -> Int -> UnvisitedNodes -> String -> UnvisitedNodes
 updateNeighbours valves currentDistance unvisitedNodes = foldl (updateNeighbour currentDistance) unvisitedNodes . reachableNeighbours valves
@@ -126,7 +133,7 @@ findMaxPressure2 timeLimit (Input distanceMap network) =
         bestSingleRun = maximum (map snd humanResults)
     in  foldl (runElephants timeLimit distanceMap network bestSingleRun) 0 humanResults
 
-runElephants :: Int -> DistanceMap -> [(String, Node)] -> Int -> Int -> ([String], Int) -> Int
+runElephants :: Int -> DistanceMap -> NodeList -> Int -> Int -> ([String], Int) -> Int
 runElephants timeLimit distanceMap network bestSingleRun bestDoubleRun (availableNodes, runResult)
     | runResult + bestSingleRun > bestDoubleRun =
         let nextResult = elephantResults timeLimit distanceMap (filterNetwork (M.fromList network) availableNodes) runResult
@@ -140,29 +147,29 @@ elephantResults :: Int -> DistanceMap -> Network -> Int -> Int
 elephantResults timeLimit distanceMap unvisitedNodes humansPressure = humansPressure + runOutputs1 timeLimit distanceMap unvisitedNodes
 
 runOutputs1 :: Int -> DistanceMap -> Network -> Int
-runOutputs1 remainingTime distanceMap network = maximum $ map (uncurry $ moveToNode1 distanceMap remainingTime network) $ M.toList network
+runOutputs1 remainingTime distanceMap network = maximum $ map (moveToNode1 distanceMap remainingTime network) $ M.toList network
 
 runOutputs2 :: Int -> DistanceMap -> Network -> [M.Map [String] Int]
-runOutputs2 remainingTime distanceMap network = concatMap (uncurry $ moveToNode2 distanceMap remainingTime network) $ M.toList network
+runOutputs2 remainingTime distanceMap network = concatMap (moveToNode2 distanceMap remainingTime network) $ M.toList network
 
 maximumPressures :: [M.Map [String] Int] -> [([String], Int)]
 maximumPressures = M.toList . M.unionsWith max
 
-moveToNode2 :: M.Map String Int -> Int -> Network -> String -> Node -> [M.Map [String] Int]
-moveToNode2 nodeDistances remainingTime remainingNodes nextNodeName (Node nextNodePressure nextNodeDistances)
+moveToNode2 :: DistanceMap -> Int -> Network -> (String, Node) -> [M.Map [String] Int]
+moveToNode2 nodeDistances remainingTime remainingNodes (nextNodeName, Node nextNodePressure nextNodeDistances)
     | remainingTime' <= 0 = [M.singleton (M.keys remainingNodes) 0]
     | otherwise = map (M.map (+ pressure)) $ runOutputs2 remainingTime' nextNodeDistances remainingNodes'
         where   remainingTime' = decreaseRemainingTime remainingTime nodeDistances nextNodeName
                 pressure = remainingTime' * nextNodePressure
                 remainingNodes' = M.delete nextNodeName remainingNodes
 
-moveToNode1 :: M.Map String Int -> Int -> Network -> String -> Node -> Int
-moveToNode1 nodeDistances remainingTime remainingNodes nextNodeName (Node nextNodePressure nextNodeDistances)
+moveToNode1 :: DistanceMap -> Int -> Network -> (String, Node) -> Int
+moveToNode1 nodeDistances remainingTime remainingNodes (nextNodeName, Node nextNodePressure nextNodeDistances)
     | remainingTime' <= 0 = 0
     | otherwise = pressure + runOutputs1 remainingTime' nextNodeDistances remainingNodes'
         where   remainingTime' = decreaseRemainingTime remainingTime nodeDistances nextNodeName
                 pressure = remainingTime' * nextNodePressure
                 remainingNodes' = M.delete nextNodeName remainingNodes
 
-decreaseRemainingTime :: Int -> M.Map String Int -> String -> Int
+decreaseRemainingTime :: Int -> DistanceMap -> String -> Int
 decreaseRemainingTime remainingTime nodeDistances nextNodeName = remainingTime - 1 - (nodeDistances M.! nextNodeName)
