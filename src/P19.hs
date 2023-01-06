@@ -26,14 +26,18 @@ parse :: String -> [Blueprint]
 parse = map parseLine . lines
 
 parseLine :: String -> Blueprint
-parseLine = M.fromList . map (parseRobot . words) . filter (not . null) . splitOn "." . unwords . drop 2 . words
+parseLine = M.fromList . mapMaybe (parseRobot . words) . splitOn "." . dropLeadingBlueprintName
 
-parseRobot :: [String] -> (Resource, ResourceSet)
-parseRobot (_:robotTypeStr:_:costsStrs) = (parseResource robotTypeStr, parseCosts costsStrs)
+dropLeadingBlueprintName :: String -> String
+dropLeadingBlueprintName = unwords . drop 2 . words
+
+parseRobot :: [String] -> Maybe (Resource, ResourceSet)
+parseRobot [] = Nothing
+parseRobot (_:robotTypeStr:_:costsStrs) = Just (parseResource robotTypeStr, parseCosts costsStrs)
 parseRobot e = error ("Error parsing robot string: " ++ unwords e)
 
 parseCosts :: [String] -> ResourceSet
-parseCosts = resourceSet . M.fromList . parseCosts'
+parseCosts = resourceSet . parseCosts'
 
 parseCosts' :: [String] -> [(Resource, Int)]
 parseCosts' [] = []
@@ -47,8 +51,12 @@ parseResource "obsidian" = Obsidian
 parseResource "geode" = Geode
 parseResource e = error ("Can't parse resource: " ++ e)
 
-resourceSet :: M.Map Resource Int -> ResourceSet
-resourceSet m = ResourceSet (fromMaybe 0 (M.lookup Ore m)) (fromMaybe 0 (M.lookup Clay m)) (fromMaybe 0 (M.lookup Obsidian m)) (fromMaybe 0 (M.lookup Geode m))
+resourceSet :: [(Resource, Int)] -> ResourceSet
+resourceSet xs = ResourceSet (resourceValue Ore m) (resourceValue Clay m) (resourceValue Obsidian m) (resourceValue Geode m)
+    where m = M.fromList xs
+
+resourceValue :: Resource -> M.Map Resource Int -> Int
+resourceValue resource = fromMaybe 0 . M.lookup resource
 
 solve1 :: [Blueprint] -> Int
 solve1 = sum . zipWith (*) [1..] . map (geodesProduced 24)
@@ -71,7 +79,7 @@ runFactory i state@(State _ _ robots) =
     maximum $ map (runFactory (i-1) . buildResources robots) $ buildRobots state
 
 buildResources :: ResourceSet -> State -> State
-buildResources robots (State blueprint resources robots') = State blueprint (addResources robots resources) robots'
+buildResources startRobots (State blueprint resources endRobots) = State blueprint (addResources startRobots resources) endRobots
 
 removeResources :: ResourceSet -> ResourceSet -> ResourceSet
 removeResources (ResourceSet baseOre baseClay baseObsidian baseGeode) (ResourceSet removeOre removeClay removeObsidian removeGeode) =
@@ -84,9 +92,9 @@ addResources (ResourceSet baseOre baseClay baseObsidian baseGeode) (ResourceSet 
 buildRobots :: State -> [State]
 buildRobots state =
     case tryBuildRobot state Geode of
-        Just geodeBot -> [geodeBot]
+        Just geodeBuilt -> [geodeBuilt]
         Nothing -> case tryBuildRobot state Obsidian of
-            Just obsidianBot -> [obsidianBot]
+            Just obsidianBuilt -> [obsidianBuilt]
             Nothing -> state : mapMaybe (tryBuildRobot state) (filter (shouldBuildRobot state) [Ore, Clay])
 
 tryBuildRobot :: State -> Resource -> Maybe State
