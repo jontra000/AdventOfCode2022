@@ -65,7 +65,7 @@ solve2 :: [Blueprint] -> Int
 solve2 = product . map (geodesProduced 32) . take 3
 
 geodesProduced :: Int -> Blueprint -> Int
-geodesProduced timeLimit = runFactory timeLimit . initState
+geodesProduced timeLimit blueprint = maximum (map (buildRobot timeLimit (initState blueprint)) [Ore, Clay])
 
 initState :: Blueprint -> State
 initState blueprint = State blueprint initResources (ResourceSet 1 0 0 0)
@@ -73,37 +73,60 @@ initState blueprint = State blueprint initResources (ResourceSet 1 0 0 0)
 initResources :: ResourceSet
 initResources = ResourceSet 0 0 0 0
 
-runFactory :: Int -> State -> Int
-runFactory 0 state = countGeodes state
-runFactory i state@(State _ _ robots) =
-    maximum $ map (runFactory (i-1) . buildResources robots) $ buildRobots state
-
-buildResources :: ResourceSet -> State -> State
-buildResources startRobots (State blueprint resources endRobots) = State blueprint (addResources startRobots resources) endRobots
-
 removeResources :: ResourceSet -> ResourceSet -> ResourceSet
 removeResources (ResourceSet baseOre baseClay baseObsidian baseGeode) (ResourceSet removeOre removeClay removeObsidian removeGeode) =
     ResourceSet (baseOre - removeOre) (baseClay - removeClay) (baseObsidian - removeObsidian) (baseGeode - removeGeode)
 
-addResources :: ResourceSet -> ResourceSet -> ResourceSet
-addResources (ResourceSet baseOre baseClay baseObsidian baseGeode) (ResourceSet addOre addClay addObsidian addGeode) =
-    ResourceSet (baseOre + addOre) (baseClay + addClay) (baseObsidian + addObsidian) (baseGeode + addGeode)
+addResources' :: ResourceSet -> ResourceSet -> Int -> ResourceSet
+addResources' (ResourceSet baseOre baseClay baseObsidian baseGeode) (ResourceSet addOre addClay addObsidian addGeode) count =
+    ResourceSet (baseOre + count * addOre) (baseClay + count * addClay) (baseObsidian + count * addObsidian) (baseGeode + count * addGeode)
 
-buildRobots :: State -> [State]
-buildRobots state =
-    case tryBuildRobot state Geode of
-        Just geodeBuilt -> [geodeBuilt]
-        Nothing -> case tryBuildRobot state Obsidian of
-            Just obsidianBuilt -> [obsidianBuilt]
-            Nothing -> state : mapMaybe (tryBuildRobot state) (filter (shouldBuildRobot state) [Ore, Clay])
+buildRobot :: Int -> State -> Resource -> Int
+buildRobot remainingTime (State blueprint resources robots) resource
+    | remainingTime' <= 0 = geodesBuilt
+    | otherwise = maximum (map (buildRobot remainingTime' state') $ nextRobots state')
+    where timeTaken = timeToBuildRobot remainingTime (blueprint M.! resource) resources robots
+          remainingTime' = remainingTime - timeTaken
+          resources' = addResources' resources robots (min remainingTime timeTaken)
+          geodesBuilt = lookupResource resources' Geode
+          state' = addRobot' (State blueprint resources' robots) resource
 
-tryBuildRobot :: State -> Resource -> Maybe State
-tryBuildRobot (State blueprint resources robots) resource =
+timeToBuildRobot :: Int -> ResourceSet -> ResourceSet -> ResourceSet -> Int
+timeToBuildRobot remainingTime requirements resources robots = maximum (map (timeToBuildResource remainingTime requirements resources robots) [Ore, Clay, Obsidian])
+
+timeToBuildResource :: Int -> ResourceSet -> ResourceSet -> ResourceSet -> Resource -> Int
+timeToBuildResource remainingTime requirements resources robots resource
+    | toBuild <= 0 = 1
+    | resourceRobots <= 0 = remainingTime + 1
+    | otherwise = max 0 timeToBuild + 1
+    where resourceRequired = lookupResource requirements resource
+          resourceInit = lookupResource resources resource
+          resourceRobots = lookupResource robots resource
+          toBuild = resourceRequired - resourceInit
+          timeToBuild = toBuild `divRoundUp` resourceRobots
+
+divRoundUp :: Int -> Int -> Int
+divRoundUp x y = x `div` y + rounding
+    where rounding = min 1 (x `mod` y)
+
+addRobot' :: State -> Resource -> State
+addRobot' (State blueprint resources robots) resource =
+    let requiredResources = blueprint M.! resource
+        resources' = removeResources resources requiredResources
+        robots' = addRobot robots resource
+    in  State blueprint resources' robots'
+
+nextRobots :: State -> [Resource]
+nextRobots state
+    | canBuildRobot state Geode = [Geode]
+    | canBuildRobot state Obsidian = [Obsidian]
+    | otherwise = filter (shouldBuildRobot state) [Ore, Clay, Obsidian, Geode] 
+
+canBuildRobot :: State -> Resource -> Bool
+canBuildRobot (State blueprint resources _) resource =
     let required = blueprint M.! resource
         remainingResources = removeResources resources required
-    in  if notNegative remainingResources
-        then Just (State blueprint remainingResources (addRobot robots resource))
-        else Nothing
+    in  notNegative remainingResources
 
 shouldBuildRobot :: State -> Resource -> Bool
 shouldBuildRobot _ Geode = True
@@ -120,9 +143,6 @@ addRobot (ResourceSet ore clay obsidian geode) Geode = ResourceSet ore clay obsi
 
 notNegative :: ResourceSet -> Bool
 notNegative (ResourceSet ore clay obsidian geode) = ore >= 0 && clay >= 0 && obsidian >= 0 && geode >= 0
-
-countGeodes :: State -> Int
-countGeodes (State _ (ResourceSet _ _ _ geodes) _) = geodes
 
 lookupResource :: ResourceSet -> Resource -> Int
 lookupResource (ResourceSet ore _ _ _) Ore = ore
