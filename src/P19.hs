@@ -26,15 +26,18 @@ parse :: String -> [Blueprint]
 parse = map parseLine . lines
 
 parseLine :: String -> Blueprint
-parseLine = M.fromList . mapMaybe (parseRobot . words) . splitOn "." . dropLeadingBlueprintName
+parseLine = parseBlueprint . splitOn "." . dropLeadingBlueprintName
 
 dropLeadingBlueprintName :: String -> String
 dropLeadingBlueprintName = unwords . drop 2 . words
 
-parseRobot :: [String] -> Maybe (Resource, ResourceSet)
-parseRobot [] = Nothing
-parseRobot (_:robotTypeStr:_:costsStrs) = Just (parseResource robotTypeStr, parseCosts costsStrs)
-parseRobot e = error ("Error parsing robot string: " ++ unwords e)
+parseBlueprint :: [String] -> Blueprint
+parseBlueprint = M.fromList . mapMaybe (parseRobotCost . words)
+
+parseRobotCost :: [String] -> Maybe (Resource, ResourceSet)
+parseRobotCost [] = Nothing
+parseRobotCost (_:robotTypeStr:_:costsStrs) = Just (parseResource robotTypeStr, parseCosts costsStrs)
+parseRobotCost e = error ("Error parsing robot string: " ++ unwords e)
 
 parseCosts :: [String] -> ResourceSet
 parseCosts = resourceSet . parseCosts'
@@ -59,13 +62,20 @@ resourceValue :: Resource -> M.Map Resource Int -> Int
 resourceValue resource = fromMaybe 0 . M.lookup resource
 
 solve1 :: [Blueprint] -> Int
-solve1 = sum . zipWith (*) [1..] . map (geodesProduced 24)
+solve1 = sum . qualityLevels . map (geodesProduced 24)
+
+qualityLevels :: [Int] -> [Int]
+qualityLevels = zipWith (*) [1..]
 
 solve2 :: [Blueprint] -> Int
 solve2 = product . map (geodesProduced 32) . take 3
 
 geodesProduced :: Int -> Blueprint -> Int
-geodesProduced timeLimit blueprint = maximum (map (buildRobot timeLimit (initState blueprint)) [Ore, Clay])
+geodesProduced timeLimit blueprint = bestGeodes timeLimit (initState blueprint)
+
+bestGeodes :: Int -> State -> Int
+bestGeodes timeRemaining state = maximum $ map (buildNextRobot timeRemaining state) robotsToBuild
+    where robotsToBuild = nextRobotsToBuild state
 
 initState :: Blueprint -> State
 initState blueprint = State blueprint initResources (ResourceSet 1 0 0 0)
@@ -81,43 +91,45 @@ addResources' :: ResourceSet -> ResourceSet -> Int -> ResourceSet
 addResources' (ResourceSet baseOre baseClay baseObsidian baseGeode) (ResourceSet addOre addClay addObsidian addGeode) count =
     ResourceSet (baseOre + count * addOre) (baseClay + count * addClay) (baseObsidian + count * addObsidian) (baseGeode + count * addGeode)
 
-buildRobot :: Int -> State -> Resource -> Int
-buildRobot remainingTime (State blueprint resources robots) resource
+buildNextRobot :: Int -> State -> Resource -> Int
+buildNextRobot remainingTime (State blueprint resources robots) resource
     | remainingTime' <= 0 = geodesBuilt
-    | otherwise = maximum (map (buildRobot remainingTime' state') $ nextRobots state')
+    | otherwise = bestGeodes remainingTime' state'
     where timeTaken = timeToBuildRobot remainingTime (blueprint M.! resource) resources robots
           remainingTime' = remainingTime - timeTaken
           resources' = addResources' resources robots (min remainingTime timeTaken)
           geodesBuilt = lookupResource resources' Geode
-          state' = addRobot' (State blueprint resources' robots) resource
+          state' = constructRobot (State blueprint resources' robots) resource
 
 timeToBuildRobot :: Int -> ResourceSet -> ResourceSet -> ResourceSet -> Int
-timeToBuildRobot remainingTime requirements resources robots = maximum (map (timeToBuildResource remainingTime requirements resources robots) [Ore, Clay, Obsidian])
+timeToBuildRobot remainingTime requirements resources robots = maximum (map timeToBuildResource' [Ore, Clay, Obsidian])
+    where timeToBuildResource' = timeToBuildResource remainingTime requirements resources robots
 
 timeToBuildResource :: Int -> ResourceSet -> ResourceSet -> ResourceSet -> Resource -> Int
 timeToBuildResource remainingTime requirements resources robots resource
-    | toBuild <= 0 = 1
+    | resourceRequired' <= 0 = 1
     | resourceRobots <= 0 = remainingTime + 1
     | otherwise = max 0 timeToBuild + 1
-    where resourceRequired = lookupResource requirements resource
-          resourceInit = lookupResource resources resource
+    where resourceRequired' = resourcesRequired requirements resources resource
           resourceRobots = lookupResource robots resource
-          toBuild = resourceRequired - resourceInit
-          timeToBuild = toBuild `divRoundUp` resourceRobots
+          timeToBuild = resourceRequired' `divRoundUp` resourceRobots
+
+resourcesRequired :: ResourceSet -> ResourceSet -> Resource -> Int
+resourcesRequired requirements currentResources resource = lookupResource requirements resource - lookupResource currentResources resource
 
 divRoundUp :: Int -> Int -> Int
 divRoundUp x y = x `div` y + rounding
     where rounding = min 1 (x `mod` y)
 
-addRobot' :: State -> Resource -> State
-addRobot' (State blueprint resources robots) resource =
+constructRobot :: State -> Resource -> State
+constructRobot (State blueprint resources robots) resource =
     let requiredResources = blueprint M.! resource
         resources' = removeResources resources requiredResources
-        robots' = addRobot robots resource
+        robots' = incrementResource robots resource
     in  State blueprint resources' robots'
 
-nextRobots :: State -> [Resource]
-nextRobots state
+nextRobotsToBuild :: State -> [Resource]
+nextRobotsToBuild state
     | canBuildRobot state Geode = [Geode]
     | canBuildRobot state Obsidian = [Obsidian]
     | otherwise = filter (shouldBuildRobot state) [Ore, Clay, Obsidian, Geode] 
@@ -135,11 +147,11 @@ shouldBuildRobot (State blueprint _ robots) resource =
     let maxRequired = maximum $ map (`lookupResource` resource) (M.elems blueprint)
     in  lookupResource robots resource < maxRequired
 
-addRobot :: ResourceSet -> Resource -> ResourceSet
-addRobot (ResourceSet ore clay obsidian geode) Ore = ResourceSet (ore + 1) clay obsidian geode
-addRobot (ResourceSet ore clay obsidian geode) Clay = ResourceSet ore (clay+1) obsidian geode
-addRobot (ResourceSet ore clay obsidian geode) Obsidian = ResourceSet ore clay (obsidian+1) geode
-addRobot (ResourceSet ore clay obsidian geode) Geode = ResourceSet ore clay obsidian (geode+1)
+incrementResource :: ResourceSet -> Resource -> ResourceSet
+incrementResource (ResourceSet ore clay obsidian geode) Ore = ResourceSet (ore + 1) clay obsidian geode
+incrementResource (ResourceSet ore clay obsidian geode) Clay = ResourceSet ore (clay+1) obsidian geode
+incrementResource (ResourceSet ore clay obsidian geode) Obsidian = ResourceSet ore clay (obsidian+1) geode
+incrementResource (ResourceSet ore clay obsidian geode) Geode = ResourceSet ore clay obsidian (geode+1)
 
 notNegative :: ResourceSet -> Bool
 notNegative (ResourceSet ore clay obsidian geode) = ore >= 0 && clay >= 0 && obsidian >= 0 && geode >= 0
