@@ -1,7 +1,8 @@
 module P20 (run1, run2, inputLocation) where
 
-import Data.List (foldl', findIndex)
-import Data.Tuple (swap)
+import Data.List (foldl')
+import Data.Foldable (toList)
+import qualified Data.Sequence as S
 
 inputLocation :: String
 inputLocation = "inputs/input20"
@@ -19,34 +20,47 @@ solve1 :: [Int] -> Int
 solve1 = sum . groveCoordinates . mix
 
 solve2 :: [Int] -> Int
-solve2 = sum . groveCoordinates . map fst . (!! 10) . iterate mixTagged . map swap . zip [0..] . map (* 811589153)
+solve2 = sum . groveCoordinates . mixN 10 . applyDecryptionKey
+
+applyDecryptionKey :: [Int] -> [Int]
+applyDecryptionKey = map (* 811589153)
 
 mix :: [Int] -> [Int]
-mix xs = map fst $ mixTagged (zip xs [0..])
+mix = mixN 1
 
-mixTagged :: [(Int, Int)] -> [(Int, Int)]
-mixTagged xs = foldl' mix' xs [0..length xs - 1]
+mixN :: Int -> [Int] -> [Int]
+mixN n xs = positionsToValues xs $ toList $ (!! n) $ tagStream xs
 
-mix' :: [(Int, Int)] -> Int -> [(Int, Int)]
-mix' xs i =
-    case findIndex ((== i) . snd) xs of
-        Nothing -> error ("bad list")
-        Just currentI ->
-            let (prev,x:next) = splitAt currentI xs
-                i' = circularIndex (length xs) (fst x + currentI)
-            in  if i' > currentI
-                then
-                    let (mid,end) = splitAt (i' - currentI) next
-                    in  prev ++ mid ++ [x] ++ end
-                else
-                    let (start,mid) = splitAt i' prev
-                    in  start ++ [x] ++ mid ++ next
+mixTagged :: [(Int, Int)] -> S.Seq Int -> S.Seq Int
+mixTagged values positions = foldl' mix' positions values
+
+tagStream :: [Int] -> [S.Seq Int]
+tagStream xs = iterate (mixTagged (zip [0..] xs)) ixs
+    where ixs = S.fromList [0..length xs - 1]
+
+mix' :: S.Seq Int -> (Int, Int) -> S.Seq Int
+mix' xs (i, x) =
+    let location = seqElemIndex xs i
+        location' = circularIndex (length xs) (location + x)
+    in  shift i location location' xs
+
+seqElemIndex :: S.Seq Int -> Int -> Int
+seqElemIndex xs i = case S.elemIndexL i xs of
+    Just x -> x
+    Nothing -> error "Element not found"
+
+shift :: Int -> Int -> Int -> S.Seq Int -> S.Seq Int
+shift value start end xs
+    | end > start =
+        let xs' = S.deleteAt start xs
+        in  S.insertAt end value xs'
+    | otherwise =
+        let xs' = S.deleteAt start xs
+        in  S.insertAt end value xs'
 
 circularIndex :: Int -> Int -> Int
 circularIndex 0 _ = error "div by 0"
-circularIndex period i
-    | i < 0 = i `mod` (period - 1)
-    | otherwise = i `mod` (period - 1)
+circularIndex period i = i `mod` (period - 1)
 
 baseToZero :: [Int] -> [Int]
 baseToZero xs =
@@ -56,3 +70,6 @@ baseToZero xs =
 groveCoordinates :: [Int] -> [Int]
 groveCoordinates xs = map (baseToZero xs !!) [1000 `mod` period, 2000 `mod` period, 3000 `mod` period]
     where period = length xs
+
+positionsToValues :: [Int] -> [Int] -> [Int]
+positionsToValues values = map (values !!)
