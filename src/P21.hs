@@ -16,9 +16,6 @@ run1 = solve1 . parse
 run2 :: String -> Int
 run2 = solve2 . parse
 
-solve2 :: MonkeyJobs -> Int
-solve2 jobs = variableResult jobs (jobs M.! "root")
-
 parse :: String -> MonkeyJobs
 parse = M.fromList . map parseLine . lines
 
@@ -43,6 +40,9 @@ parseOperation e = error ("Couldn't parse operation " ++ e)
 solve1 :: MonkeyJobs -> Int
 solve1 jobs = result jobs (jobs M.! "root")
 
+solve2 :: MonkeyJobs -> Int
+solve2 jobs = calculateEquality jobs (jobs M.! "root")
+
 result :: MonkeyJobs -> MonkeyJob -> Int
 result _ (ShoutNumber x) = x
 result jobs (ShoutResult dep1 dep2 operation) =
@@ -56,11 +56,11 @@ doOperation Minus x y = x - y
 doOperation Multiply x y = x * y
 doOperation Divide x y = x `div` y
 
-result2 :: MonkeyJobs -> MonkeyJob -> JobResult
-result2 _ (ShoutNumber x) = NumberResult x
-result2 jobs (ShoutResult "humn" dep2 operation) = reverseOperationRight id (result jobs (jobs M.! dep2)) operation
-result2 jobs (ShoutResult dep1 "humn" operation) = reverseOperationLeft id (result jobs (jobs M.! dep1)) operation
-result2 jobs (ShoutResult dep1 dep2 operation) = case (result2 jobs (jobs M.! dep1), result2 jobs (jobs M.! dep2)) of
+variableResult :: MonkeyJobs -> MonkeyJob -> JobResult
+variableResult _ (ShoutNumber x) = NumberResult x
+variableResult jobs (ShoutResult "humn" dep2 operation) = reverseOperationRight id (result jobs (jobs M.! dep2)) operation
+variableResult jobs (ShoutResult dep1 "humn" operation) = reverseOperationLeft id (result jobs (jobs M.! dep1)) operation
+variableResult jobs (ShoutResult dep1 dep2 operation) = case (variableResult jobs (jobs M.! dep1), variableResult jobs (jobs M.! dep2)) of
         (NumberResult x, NumberResult y) -> NumberResult $ doOperation operation x y
         (VariableResult v, NumberResult y) -> reverseOperationRight v y operation
         (NumberResult x, VariableResult v) -> reverseOperationLeft v x operation
@@ -78,9 +78,9 @@ reverseOperationRight f x Minus = VariableResult (f . (x +))
 reverseOperationRight f x Multiply = VariableResult (f . (`div` x))
 reverseOperationRight f x Divide = VariableResult (f . (*) x)
 
-variableResult :: MonkeyJobs -> MonkeyJob -> Int
-variableResult jobs (ShoutResult dep1 dep2 _) = case (result2 jobs (jobs M.! dep1), result2 jobs (jobs M.! dep2)) of
+calculateEquality :: MonkeyJobs -> MonkeyJob -> Int
+calculateEquality jobs (ShoutResult dep1 dep2 _) = case (variableResult jobs (jobs M.! dep1), variableResult jobs (jobs M.! dep2)) of
         (VariableResult v, NumberResult y) -> v y
         (NumberResult x, VariableResult v) -> v x
         _ -> error "Didn't get variable result"
-variableResult _ _ = error "Top level should be operation"
+calculateEquality _ _ = error "Top level should be operation"
