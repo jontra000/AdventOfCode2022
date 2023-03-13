@@ -29,14 +29,15 @@ mix :: [Int] -> [Int]
 mix = mixN 1
 
 mixN :: Int -> [Int] -> [Int]
-mixN n xs = positionsToValues xs $ toList $ (!! n) $ tagStream xs
+mixN n xs = positionsToValues xs $ (!! n) $ tagStream xs
 
 mixTagged :: [(Int, Int)] -> S.Seq Int -> S.Seq Int
 mixTagged values positions = foldl' mix' positions values
 
 tagStream :: [Int] -> [S.Seq Int]
-tagStream xs = iterate (mixTagged (zip [0..] xs)) ixs
+tagStream xs = iterate (mixTagged indexedValues) ixs
     where ixs = S.fromList [0..length xs - 1]
+          indexedValues = zip [0..] xs
 
 mix' :: S.Seq Int -> (Int, Int) -> S.Seq Int
 mix' xs (i, x) =
@@ -50,26 +51,23 @@ seqElemIndex xs i = case S.elemIndexL i xs of
     Nothing -> error "Element not found"
 
 shift :: Int -> Int -> Int -> S.Seq Int -> S.Seq Int
-shift value start end xs
-    | end > start =
-        let xs' = S.deleteAt start xs
-        in  S.insertAt end value xs'
-    | otherwise =
-        let xs' = S.deleteAt start xs
-        in  S.insertAt end value xs'
+shift value start end xs =
+    let xs' = S.deleteAt start xs
+    in  S.insertAt end value xs'
 
 circularIndex :: Int -> Int -> Int
-circularIndex 0 _ = error "div by 0"
+circularIndex 1 _ = error "div by 0"
 circularIndex period i = i `mod` (period - 1)
 
 baseToZero :: [Int] -> [Int]
 baseToZero xs =
-    let (toWrap,res) = break (==0) xs
+    let (toWrap, res) = break (==0) xs
     in  res ++ toWrap
 
 groveCoordinates :: [Int] -> [Int]
-groveCoordinates xs = map (baseToZero xs !!) [1000 `mod` period, 2000 `mod` period, 3000 `mod` period]
+groveCoordinates xs = map (xs' !!) [1000 `mod` period, 2000 `mod` period, 3000 `mod` period]
     where period = length xs
+          xs' = baseToZero xs
 
-positionsToValues :: [Int] -> [Int] -> [Int]
-positionsToValues values = map (values !!)
+positionsToValues :: [Int] -> S.Seq Int -> [Int]
+positionsToValues values = map (values !!) . toList
