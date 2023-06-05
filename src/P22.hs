@@ -20,6 +20,16 @@ data CubeOrientation = Front | LeftFace | RightFace | Top | Bottom | Back derivi
 data Transform = None | RotateLeft | RotateRight | Rotate180 deriving Show
 data CubeFace = CubeFace Board Coord Transform deriving Show
 
+-- Cube face orientation relations (same pattern for all faces):
+--
+--   ---
+--   ->-
+-- -------
+-- -v-^->-
+-- -------
+--   -v-
+--   ---
+
 inputLocation :: String
 inputLocation = "inputs/input22"
 
@@ -104,61 +114,47 @@ wrapFlat' FacingRight = wrapRight
 wrapCube :: Cube -> CubeOrientation -> Coord -> Heading -> State
 wrapCube cube@(Cube sideLength _) orientation location heading =
     let orientation' = moveFace orientation heading
-        heading' = wrapHeadingCube orientation heading
-        location' = wrapLocationCube sideLength heading heading' location
+        heading' = wrapHeadingCube heading
+        location' = wrapLocationCube sideLength heading location
     in  StateCube cube orientation' location' heading'
 
 moveFace :: CubeOrientation -> Heading -> CubeOrientation
+moveFace Front FacingUp = Top
+moveFace Front FacingLeft = LeftFace
+moveFace Front FacingRight = RightFace
+moveFace Front FacingDown = Bottom
 moveFace Bottom FacingUp = Back
-moveFace Top FacingUp = Back
-moveFace _ FacingUp = Top
-moveFace Top FacingDown = Front
-moveFace Bottom FacingDown = Front
-moveFace _ FacingDown = Bottom
-moveFace LeftFace FacingLeft = Back
-moveFace Back FacingLeft = RightFace
 moveFace Bottom FacingLeft = RightFace
-moveFace RightFace FacingLeft = Front
-moveFace _ FacingLeft = LeftFace
-moveFace RightFace FacingRight = Back
-moveFace Back FacingRight = LeftFace
-moveFace LeftFace FacingRight = Front
 moveFace Bottom FacingRight = LeftFace
-moveFace _ FacingRight = RightFace
+moveFace Bottom FacingDown = Front
+moveFace Top FacingUp = RightFace
+moveFace Top FacingLeft = Back
+moveFace Top FacingRight = Front
+moveFace Top FacingDown = LeftFace
+moveFace LeftFace FacingUp = Bottom
+moveFace LeftFace FacingLeft = Front
+moveFace LeftFace FacingRight = Back
+moveFace LeftFace FacingDown = Top
+moveFace RightFace FacingUp = Front
+moveFace RightFace FacingLeft = Bottom
+moveFace RightFace FacingRight = Top
+moveFace RightFace FacingDown = Back
+moveFace Back FacingUp = LeftFace
+moveFace Back FacingLeft = Top
+moveFace Back FacingRight = Bottom
+moveFace Back FacingDown = RightFace
 
-wrapHeadingCube :: CubeOrientation -> Heading -> Heading
-wrapHeadingCube Front FacingDown = FacingUp
-wrapHeadingCube Front x = x
-wrapHeadingCube Top _ = FacingDown
-wrapHeadingCube Bottom _ = FacingUp
-wrapHeadingCube Back FacingUp = FacingDown
-wrapHeadingCube Back x = x
-wrapHeadingCube LeftFace FacingUp = FacingRight
-wrapHeadingCube LeftFace FacingDown = FacingLeft
-wrapHeadingCube RightFace FacingUp = FacingLeft
-wrapHeadingCube RightFace FacingDown = FacingRight
-wrapHeadingCube _ x = x
+wrapHeadingCube :: Heading -> Heading
+wrapHeadingCube FacingUp = FacingLeft
+wrapHeadingCube FacingLeft = FacingRight
+wrapHeadingCube FacingRight = FacingDown
+wrapHeadingCube FacingDown = FacingUp
 
-wrapLocationCube :: Int -> Heading -> Heading -> Coord -> Coord
-wrapLocationCube sideLength oldHeading newHeading = sideCoord sideLength oldHeading newHeading . freeCoord sideLength
-
-sideCoord :: Int -> Heading -> Heading -> Int -> Coord
-sideCoord sideLength FacingUp FacingDown x = (sideLength + 1 - x, 1)
-sideCoord sideLength FacingDown FacingUp x = (sideLength + 1 - x, sideLength)
-sideCoord sideLength FacingLeft FacingUp x = (sideLength + 1 - x, sideLength)
-sideCoord sideLength FacingDown FacingRight x = (1, sideLength + 1 - x)
-sideCoord sideLength FacingRight FacingDown x = (sideLength + 1 - x, 1)
-sideCoord sideLength FacingUp FacingLeft x = (sideLength, sideLength + 1 - x)
-sideCoord sideLength _ FacingUp x = (x, sideLength)
-sideCoord _ _ FacingDown x = (x, 1)
-sideCoord sideLength _ FacingLeft y = (sideLength, y)
-sideCoord _ _ FacingRight y = (1, y)
-
-freeCoord :: Int -> Coord -> Int
-freeCoord maxCoord (x,y)
-    | x > 0 && x <= maxCoord = x
-    | y > 0 && y <= maxCoord = y
-    | otherwise = error ("Coords out of bounds: " ++ show x ++ "," ++ show y)
+wrapLocationCube :: Int -> Heading -> Coord -> Coord
+wrapLocationCube sideLength FacingUp (x,_) = (sideLength, sideLength + 1 - x)
+wrapLocationCube sideLength FacingLeft (_,y) = (1, sideLength + 1 - y)
+wrapLocationCube sideLength FacingRight (_,y) = (sideLength + 1 - y, 1)
+wrapLocationCube sideLength FacingDown (x,_) = (sideLength + 1 - x, sideLength)
 
 wrapDown :: Board -> Coord -> Coord
 wrapDown board (column,_) = minimum $ filter (\(x,_) -> x == column) $ M.keys board
@@ -300,9 +296,10 @@ isNeighbour sideLength (x1, y1) (x2, y2)
               dy = abs (y1 - y2)
 
 addFace :: Board -> Int -> [Coord] -> CubeOrientation -> CubeFace -> Faces -> Coord -> Faces
-addFace board gridSize remainingLocations connectingOrientation connectingFace@(CubeFace _ _ connectingTransform) cube currentLocation =
-    let orientation = neighbourOrientation connectingOrientation connectingFace currentLocation
-        transform = neighbourTransform connectingOrientation orientation connectingTransform
+addFace board gridSize remainingLocations connectingOrientation (CubeFace _ connectingLocation connectingTransform) cube currentLocation =
+    let heading = neighbourHeading connectingTransform connectingLocation currentLocation
+        orientation = neighbourOrientation connectingOrientation heading
+        transform = neighbourTransform connectingTransform heading
         faceBoard' = faceBoard gridSize transform currentLocation board
         face = CubeFace faceBoard' currentLocation transform
         cube' = M.insert orientation face cube
@@ -327,45 +324,33 @@ validateSubBoard sideLength c board =
 transformBoard :: Int -> Transform -> Board -> Board
 transformBoard cubeLength transform = M.mapKeys (translateCubeCoords' cubeLength transform)
 
-neighbourOrientation :: CubeOrientation -> CubeFace -> Coord -> CubeOrientation
-neighbourOrientation connectingOrientation (CubeFace _ connectingCoord@(connectingX, connectingY) connectingFacing) coord@(x, y) =
-    neighbourOrientation' connectingOrientation (applyTransform connectingFacing facing)
-    where facing
-            | connectingX == x && connectingY > y = FacingUp
-            | connectingX == x && connectingY < y = FacingDown
-            | connectingY == y && connectingX > x = FacingLeft
-            | connectingY == y && connectingX < x = FacingRight
-            | otherwise = error ("non-aligned face coordinates: " ++ show connectingCoord ++ " and " ++ show coord)
+neighbourOrientation :: CubeOrientation -> Heading -> CubeOrientation
+neighbourOrientation Front = neighbourOrientationFront
+neighbourOrientation Top = neighbourOrientationTop
+neighbourOrientation LeftFace = neighbourOrientationLeft
+neighbourOrientation RightFace = neighbourOrientationRight
+neighbourOrientation Bottom = neighbourOrientationBottom
+neighbourOrientation Back = neighbourOrientationBack
 
-neighbourTransform :: CubeOrientation -> CubeOrientation -> Transform -> Transform
-neighbourTransform prevFace nextFace transform = combineTransforms transform $ neighbourTransform' prevFace nextFace
+neighbourHeading :: Transform -> Coord -> Coord -> Heading
+neighbourHeading transform cPrev = applyTransform transform . neighbourHeading' cPrev
 
-neighbourTransform' :: CubeOrientation -> CubeOrientation -> Transform
-neighbourTransform' Front Bottom = Rotate180
-neighbourTransform' Front Back = error "Not possible to move from front to back"
-neighbourTransform' Front _ = None
-neighbourTransform' Top Front = None
-neighbourTransform' Top LeftFace = RotateRight
-neighbourTransform' Top RightFace = RotateLeft
-neighbourTransform' Top Bottom = error "Not possible to move from top to bottom"
-neighbourTransform' Top Back = Rotate180
-neighbourTransform' LeftFace RightFace = error "Not possible to move from left side to right side"
-neighbourTransform' LeftFace Top = RotateLeft
-neighbourTransform' LeftFace Bottom = RotateLeft
-neighbourTransform' LeftFace _ = None
-neighbourTransform' RightFace RightFace = error "Not possible to move from right side to left side"
-neighbourTransform' RightFace Top = RotateRight
-neighbourTransform' RightFace Bottom = RotateRight
-neighbourTransform' RightFace _ = None
-neighbourTransform' Bottom Top = error "Not possible to move from bottom side to top side"
-neighbourTransform' Bottom Back = None
-neighbourTransform' Bottom Front = Rotate180
-neighbourTransform' Bottom LeftFace = RotateRight
-neighbourTransform' Bottom RightFace = RotateLeft
-neighbourTransform' Back Top = Rotate180
-neighbourTransform' Back Front = error "Not possible to move from back side to front side"
-neighbourTransform' Back _ = None
-neighbourTransform' _ _ = error "Can't move to self"
+neighbourHeading' :: Coord -> Coord -> Heading
+neighbourHeading' cPrev@(connectingX, connectingY) cNext@(x, y)
+    | connectingX == x && connectingY > y = FacingUp
+    | connectingX == x && connectingY < y = FacingDown
+    | connectingY == y && connectingX > x = FacingLeft
+    | connectingY == y && connectingX < x = FacingRight
+    | otherwise = error ("non-aligned face coordinates: " ++ show cPrev ++ " and " ++ show cNext)
+
+neighbourTransform :: Transform -> Heading -> Transform
+neighbourTransform transform = combineTransforms transform . neighbourTransform'
+
+neighbourTransform' :: Heading -> Transform
+neighbourTransform' FacingUp = RotateRight
+neighbourTransform' FacingRight = RotateLeft
+neighbourTransform' FacingDown = Rotate180
+neighbourTransform' FacingLeft = Rotate180
 
 applyTransform :: Transform -> Heading -> Heading
 applyTransform None x = x
@@ -382,14 +367,6 @@ applyTransform Rotate180 FacingLeft = FacingRight
 applyTransform Rotate180 FacingDown = FacingUp
 applyTransform Rotate180 FacingRight = FacingLeft
 
-neighbourOrientation' :: CubeOrientation -> Heading -> CubeOrientation
-neighbourOrientation' Front = neighbourOrientationFront
-neighbourOrientation' Top = neighbourOrientationTop
-neighbourOrientation' LeftFace = neighbourOrientationLeft
-neighbourOrientation' RightFace = neighbourOrientationRight
-neighbourOrientation' Bottom = neighbourOrientationBottom
-neighbourOrientation' Back = neighbourOrientationBack
-
 neighbourOrientationFront :: Heading -> CubeOrientation
 neighbourOrientationFront FacingUp = Top
 neighbourOrientationFront FacingLeft = LeftFace
@@ -397,22 +374,22 @@ neighbourOrientationFront FacingRight = RightFace
 neighbourOrientationFront FacingDown = Bottom
 
 neighbourOrientationTop :: Heading -> CubeOrientation
-neighbourOrientationTop FacingUp = Back
-neighbourOrientationTop FacingLeft = LeftFace
-neighbourOrientationTop FacingRight = RightFace
-neighbourOrientationTop FacingDown = Front
+neighbourOrientationTop FacingUp = RightFace
+neighbourOrientationTop FacingLeft = Back
+neighbourOrientationTop FacingRight = Front
+neighbourOrientationTop FacingDown = LeftFace
 
 neighbourOrientationLeft :: Heading -> CubeOrientation
-neighbourOrientationLeft FacingUp = Top
-neighbourOrientationLeft FacingLeft = Back
-neighbourOrientationLeft FacingRight = Front
-neighbourOrientationLeft FacingDown = Bottom
+neighbourOrientationLeft FacingUp = Bottom
+neighbourOrientationLeft FacingLeft = Front
+neighbourOrientationLeft FacingRight = Back
+neighbourOrientationLeft FacingDown = Top
 
 neighbourOrientationRight :: Heading -> CubeOrientation
-neighbourOrientationRight FacingUp = Top
-neighbourOrientationRight FacingLeft = Front
-neighbourOrientationRight FacingRight = Back
-neighbourOrientationRight FacingDown = Bottom
+neighbourOrientationRight FacingUp = Front
+neighbourOrientationRight FacingLeft = Bottom
+neighbourOrientationRight FacingRight = Top
+neighbourOrientationRight FacingDown = Back
 
 neighbourOrientationBottom :: Heading -> CubeOrientation
 neighbourOrientationBottom FacingUp = Back
@@ -421,10 +398,10 @@ neighbourOrientationBottom FacingRight = LeftFace
 neighbourOrientationBottom FacingDown = Front
 
 neighbourOrientationBack :: Heading -> CubeOrientation
-neighbourOrientationBack FacingUp = Top
-neighbourOrientationBack FacingLeft = RightFace
-neighbourOrientationBack FacingRight = LeftFace
-neighbourOrientationBack FacingDown = Bottom
+neighbourOrientationBack FacingUp = LeftFace
+neighbourOrientationBack FacingLeft = Top
+neighbourOrientationBack FacingRight = Bottom
+neighbourOrientationBack FacingDown = RightFace
 
 combineTransforms :: Transform -> Transform -> Transform
 combineTransforms None x = x
