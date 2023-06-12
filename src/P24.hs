@@ -41,32 +41,38 @@ target :: Coord
 target = (xSize, ySize+1)
 
 solve1 :: [Blizzard] -> Maybe Int
-solve1 = fmap ((-1) +) . pathTime (Just 0) (1,0) target . blizzardPattern
+solve1 = fmap ((-1) +) . pathTime (1,0) target . openSpaces
 
 solve2 :: [Blizzard] -> Maybe Int
-solve2 blizzards =
-    let freeCoords = blizzardPattern blizzards
-        timeToTarget = pathTime (Just 0) (1,0) target freeCoords
-        timeToOrigin = pathTime timeToTarget target (1,0) freeCoords
-    in  ((-1) +) <$> pathTime timeToOrigin (1,0) target freeCoords
+solve2 blizzards = do
+    timeToTarget <- pathTime (1,0) target openSpaces'
+    timeToOrigin <- pathTimeWithOffset timeToTarget target (1,0) openSpaces'
+    res <- pathTimeWithOffset timeToOrigin (1,0) target openSpaces'
+    Just (res - 1)
+        where openSpaces' = openSpaces blizzards
 
-pathTime :: Maybe Int -> Coord -> Coord -> [FreeCoords] -> Maybe Int
-pathTime Nothing _ _ _ = Nothing
-pathTime (Just offset) start end freeCoords = fmap (offset +) $ findIndex (S.member end) $ scanl iteratePaths (S.singleton start) $ drop offset freeCoords
+pathTimeWithOffset :: Int -> Coord -> Coord -> [FreeCoords] -> Maybe Int
+pathTimeWithOffset offset start end = fmap (offset +) . pathTime start end . drop offset
+
+pathTime :: Coord -> Coord -> [FreeCoords] -> Maybe Int
+pathTime start end = findIndex (S.member end) . possiblePaths start
+
+possiblePaths :: Coord -> [FreeCoords] -> [S.Set Coord]
+possiblePaths start = scanl iteratePaths (S.singleton start)
 
 iteratePaths :: S.Set Coord -> FreeCoords -> S.Set Coord
 iteratePaths possibleLocations freeLocations =
-    let possibleLocations' = S.unions $ S.map nextCoords possibleLocations
+    let possibleLocations' = S.unions $ S.map possibleMoves possibleLocations
     in  S.intersection possibleLocations' freeLocations
 
-nextCoords :: Coord -> S.Set Coord
-nextCoords c@(x,y) = S.fromList [(x+1,y), (x,y+1), (x-1,y), (x,y-1), c]
+possibleMoves :: Coord -> S.Set Coord
+possibleMoves c@(x,y) = S.fromList [(x+1,y), (x,y+1), (x-1,y), (x,y-1), c]
 
 blizzardLocation :: Blizzard -> Coord
 blizzardLocation (Blizzard location _) = location
 
-blizzardPattern :: [Blizzard] -> [FreeCoords]
-blizzardPattern = cycle . take (ySize * xSize) . map toFreeCoords . iterate moveBlizzards
+openSpaces :: [Blizzard] -> [FreeCoords]
+openSpaces = map toFreeCoords . iterate moveBlizzards
 
 gridCoords :: S.Set Coord
 gridCoords = S.fromList ((1,0) : target : [(x,y) | x <- [1..xSize], y <- [1..ySize]])
