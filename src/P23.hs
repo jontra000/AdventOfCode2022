@@ -1,7 +1,7 @@
 module P23 (run1, run2, inputLocation) where
 
 import qualified Data.Set as S
-import Data.List (findIndex)
+import Data.List (findIndex, elemIndices)
 
 type Coord = (Int, Int)
 type State = S.Set Coord
@@ -23,17 +23,32 @@ parse :: String -> State
 parse = S.unions . zipWith parseLine [0..] . lines
 
 parseLine :: Int -> String -> S.Set Coord
-parseLine y = S.fromList . map (coord y . fst) . filter ((=='#') . snd) . zip [0..]
+parseLine y = S.fromList . map (coord y) . elfXCoords
+
+elfXCoords :: String -> [Int]
+elfXCoords = elemIndices '#'
 
 coord :: Int -> Int -> Coord
 coord y x = (x,y)
 
 solve1 :: State -> Int
-solve1 state = emptySpacesInRectangle $ (!! 10) $ scanl doRound state proposalOrders
+solve1 = emptySpacesInRectangle . (!! 10) . states
 
 solve2 :: State -> Maybe Int
-solve2 state = (+1) <$> findIndex (uncurry (==)) (zip states (tail states))
-    where states = scanl doRound state proposalOrders
+solve2 = noMoveRound . states
+
+states :: State -> [State]
+states initState = scanl doRound initState proposalOrders
+
+noMoveRound :: [State] -> Maybe Int
+noMoveRound (x:xs) = noMoveRound' 1 x xs
+noMoveRound _ = Nothing
+
+noMoveRound' :: Int -> State -> [State] -> Maybe Int
+noMoveRound' _ _ [] = Nothing
+noMoveRound' i a (b:xs)
+    | a == b = Just i
+    | otherwise = noMoveRound' (i+1) b xs
 
 proposalOrders :: [ProposalOrders]
 proposalOrders = cycle [[North,South,West,East], [South,West,East,North], [West,East,North,South], [East,North,South,West]]
@@ -42,7 +57,8 @@ doRound :: State -> ProposalOrders -> State
 doRound state moveOrders = S.foldl (moveElf state moveOrders) S.empty state
 
 moveElf :: State -> ProposalOrders -> State -> Coord -> State
-moveElf oldState moveOrders newState elfCoord = moveElf' oldState moveOrders newState elfCoord $ neighbours oldState elfCoord
+moveElf oldState moveOrders newState elfCoord = moveElf' oldState moveOrders newState elfCoord neighbours'
+    where neighbours' = neighbours oldState elfCoord
 
 moveElf' :: State -> ProposalOrders -> State -> Coord -> [Bool] -> State
 moveElf' _ [] newState elfCoord _ = S.insert elfCoord newState
@@ -59,12 +75,12 @@ moveInDirection West (x,y) = (x-1, y)
 
 -- Uses optimisation from https://www.reddit.com/r/adventofcode/comments/zt6xz5/comment/j1dq8oj
 handleCollision :: Coord -> (Coord -> Coord) -> State -> State
-handleCollision c delta proposedMoves =
-    let c' = delta c
-        c'' = delta c'
-    in  if S.member c' proposedMoves
-        then S.insert c $ S.insert c'' $ S.delete c' proposedMoves
-        else S.insert c' proposedMoves
+handleCollision elfStart delta proposedMoves =
+    let elfEnd = delta elfStart
+        colliderRevert = delta elfEnd
+    in  if S.member elfEnd proposedMoves -- If there is already an elf here
+        then S.insert elfStart $ S.insert colliderRevert $ S.delete elfEnd proposedMoves -- Our elf remains in place, other elf is moved back
+        else S.insert elfEnd proposedMoves -- Otherwise, our elf moves to target
 
 hasNeighboursInDirection :: Direction -> [Bool] -> Bool
 hasNeighboursInDirection North (False:False:False:_) = False
