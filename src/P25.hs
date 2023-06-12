@@ -7,7 +7,7 @@ run1 :: String -> String
 run1 = solve1 . parse
 
 run2 :: String -> Int
-run2 _ = 0 -- solve2 . parse
+run2 _ = 0
 
 parse :: String -> [String]
 parse = lines
@@ -30,7 +30,7 @@ powersOfFive :: [Int]
 powersOfFive = iterate (*5) 1
 
 convertToSnafu :: Int -> String
-convertToSnafu x = reverse $ convertDigitToSnafu 0 x
+convertToSnafu = reverse . convertDigitToSnafu 0
 
 convertDigitToSnafu :: Int -> Int -> String
 convertDigitToSnafu 0 0 = []
