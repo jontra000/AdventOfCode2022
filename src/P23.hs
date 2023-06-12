@@ -1,7 +1,7 @@
 module P23 (run1, run2, inputLocation) where
 
 import qualified Data.Set as S
-import Data.List (findIndex, elemIndices)
+import Data.List (elemIndices)
 
 type Coord = (Int, Int)
 type State = S.Set Coord
