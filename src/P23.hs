@@ -1,7 +1,7 @@
 module P23 (run1, run2, inputLocation) where
 
 import qualified Data.Set as S
-import Data.List (elemIndices, findIndex)
+import Data.List (findIndex)
 
 type Coord = (Int, Int)
 type State = S.Set Coord
@@ -39,50 +39,45 @@ proposalOrders :: [ProposalOrders]
 proposalOrders = cycle [[North,South,West,East], [South,West,East,North], [West,East,North,South], [East,North,South,West]]
 
 doRound :: State -> ProposalOrders -> State
-doRound state = doMoves . proposeMoves state
+doRound state moveOrders = S.foldl (moveElf state moveOrders) S.empty state
 
-proposeMoves :: State -> ProposalOrders -> [(Coord, Coord)]
-proposeMoves state moveOrder = S.toList $ S.map (moveElf state moveOrder) state
+moveElf :: State -> ProposalOrders -> State -> Coord -> State
+moveElf oldState moveOrders newState elfCoord = moveElf' oldState moveOrders newState elfCoord $ neighbours oldState elfCoord
 
-moveElf :: State -> ProposalOrders -> Coord -> (Coord, Coord)
-moveElf state moveOrder elfCoord =
-    if hasNeighbours state elfCoord
-    then proposeMove state elfCoord moveOrder
-    else (elfCoord, elfCoord)
+moveElf' :: State -> ProposalOrders -> State -> Coord -> [Bool] -> State
+moveElf' _ [] newState elfCoord _ = S.insert elfCoord newState
+moveElf' oldState (direction:moveOrders) newState elfCoord neighbours'
+    | all (==False) neighbours' = S.insert elfCoord newState
+    | hasNeighboursInDirection direction neighbours' = moveElf' oldState moveOrders newState elfCoord neighbours'
+    | otherwise = handleCollision elfCoord (moveInDirection direction) newState
 
-proposeMove :: State -> Coord -> ProposalOrders -> (Coord, Coord)
-proposeMove _ elfCoord [] = (elfCoord, elfCoord)
-proposeMove state elfCoord (direction:moveOrders) =
-    if hasNeighboursInDirection state direction elfCoord
-    then proposeMove state elfCoord moveOrders
-    else (elfCoord, moveInDirection elfCoord direction)
+moveInDirection :: Direction -> Coord -> Coord
+moveInDirection North (x,y) = (x, y-1)
+moveInDirection South (x,y) = (x, y+1)
+moveInDirection East (x,y) = (x+1, y)
+moveInDirection West (x,y) = (x-1, y)
 
-moveInDirection :: Coord -> Direction -> Coord
-moveInDirection (x,y) North = (x, y-1)
-moveInDirection (x,y) South = (x, y+1)
-moveInDirection (x,y) East = (x+1, y)
-moveInDirection (x,y) West = (x-1, y)
+-- Uses optimisation from https://www.reddit.com/r/adventofcode/comments/zt6xz5/comment/j1dq8oj
+handleCollision :: Coord -> (Coord -> Coord) -> State -> State
+handleCollision c delta proposedMoves =
+    let c' = delta c
+        c'' = delta c'
+    in  if S.member c' proposedMoves
+        then S.insert c $ S.insert c'' $ S.delete c' proposedMoves
+        else S.insert c' proposedMoves
 
-hasNeighboursInDirection :: State -> Direction -> Coord -> Bool
-hasNeighboursInDirection state North (x,y) = any (`S.member` state) [(x-1,y-1), (x,y-1), (x+1, y-1)]
-hasNeighboursInDirection state South (x,y) = any (`S.member` state) [(x-1,y+1), (x,y+1), (x+1, y+1)]
-hasNeighboursInDirection state East (x,y) = any (`S.member` state) [(x+1,y-1), (x+1,y), (x+1, y+1)]
-hasNeighboursInDirection state West (x,y) = any (`S.member` state) [(x-1,y-1), (x-1,y), (x-1, y+1)]
+hasNeighboursInDirection :: Direction -> [Bool] -> Bool
+hasNeighboursInDirection North (False:False:False:_) = False
+hasNeighboursInDirection North _ = True
+hasNeighboursInDirection South (_:_:_:_:False:False:False:_) = False
+hasNeighboursInDirection South _ = True
+hasNeighboursInDirection East (_:_:False:False:False:_) = False
+hasNeighboursInDirection East _ = True
+hasNeighboursInDirection West [False, _, _, _, _, _, False, False] = False
+hasNeighboursInDirection West _ = True
 
-hasNeighbours ::State -> Coord -> Bool
-hasNeighbours state (x,y) = any (`S.member` state) [(x-1,y-1), (x,y-1), (x+1, y-1), (x+1,y), (x+1, y+1), (x,y+1), (x-1,y+1), (x-1,y)]
-
-doMoves :: [(Coord, Coord)] -> State
-doMoves proposedMoves = S.fromList $ map (removeCollisions (map snd proposedMoves)) proposedMoves
-
-removeCollisions :: [Coord] -> (Coord, Coord) -> Coord
-removeCollisions proposedMoves (oldPosition, newPosition) =
-    if isCollision proposedMoves newPosition
-    then oldPosition
-    else newPosition
-
-isCollision :: [Coord] -> Coord -> Bool
-isCollision proposedMoves position = length (elemIndices position proposedMoves) > 1
+neighbours ::State -> Coord -> [Bool]
+neighbours state (x,y) = map (`S.member` state) [(x-1,y-1), (x,y-1), (x+1, y-1), (x+1,y), (x+1, y+1), (x,y+1), (x-1,y+1), (x-1,y)]
 
 emptySpacesInRectangle :: State -> Int
 emptySpacesInRectangle state = rectangleSize state - length state
